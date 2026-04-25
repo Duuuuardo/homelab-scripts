@@ -4,27 +4,33 @@ source /tmp/homelab-install/_lib.sh
 
 REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
 
-echo -e "\n${BL}══ Infra (Caddy + Homepage + Uptime Kuma) ══${CL}\n"
+echo -e "\n${BL}=== Infra (Caddy + Homepage + Uptime Kuma) ===${CL}\n"
 
 base_setup
 install_docker
 clone_repo "$REPO_URL"
 
-# ── Gera Caddyfile ──────────────────────────────────────────────────────────
+# Remove containers antigos na porta 80 (NPM, etc)
+msg_info "Verificando conflitos na porta 80"
+CONFLICTING=$(docker ps -q --filter "publish=80" 2>/dev/null || true)
+if [[ -n "$CONFLICTING" ]]; then
+  docker stop $CONFLICTING >/dev/null 2>&1 || true
+  docker rm   $CONFLICTING >/dev/null 2>&1 || true
+fi
+stop_old_containers "nginx-proxy-manager" "npm" "app" "nginxproxymanager"
+msg_ok "Porta 80 liberada"
+
+# Gera Caddyfile
 msg_info "Gerando Caddyfile"
 mkdir -p /opt/stacks/lxc-infra/caddy
 
 cat > /opt/stacks/lxc-infra/caddy/Caddyfile << 'CADDYFILE'
-# Caddy reverse proxy — homelab Eduardo
-# Acesso via Tailscale IP ou rede local (192.168.0.20)
-
 {
-    # Sem HTTPS automático — rede local / Tailscale
     auto_https off
     admin off
 }
 
-# Homepage — raiz
+# Homepage -- raiz porta 80
 :80 {
     reverse_proxy homepage:3000
 }
@@ -91,7 +97,7 @@ cat > /opt/stacks/lxc-infra/caddy/Caddyfile << 'CADDYFILE'
 CADDYFILE
 msg_ok "Caddyfile gerado"
 
-# ── Gera config da Homepage ─────────────────────────────────────────────────
+# Gera config da Homepage
 msg_info "Gerando config da Homepage"
 mkdir -p /opt/stacks/lxc-infra/homepage/config
 
@@ -133,7 +139,7 @@ cat > /opt/stacks/lxc-infra/homepage/config/services.yaml << 'SERVICES'
   - Uptime Kuma:
       icon: uptime-kuma.svg
       href: http://192.168.0.20:3001
-      description: Monitoramento de serviços
+      description: Monitoramento de servicos
       widget:
         type: uptimekuma
         url: http://uptime-kuma:3001
@@ -143,7 +149,7 @@ cat > /opt/stacks/lxc-infra/homepage/config/services.yaml << 'SERVICES'
   - Jellyfin:
       icon: jellyfin.svg
       href: http://192.168.0.21:8096
-      description: Servidor de mídia
+      description: Servidor de midia
       widget:
         type: jellyfin
         url: http://192.168.0.21:8096
@@ -151,7 +157,7 @@ cat > /opt/stacks/lxc-infra/homepage/config/services.yaml << 'SERVICES'
   - Overseerr:
       icon: overseerr.svg
       href: http://192.168.0.21:5055
-      description: Requests de filmes e séries
+      description: Requests de filmes e series
       widget:
         type: overseerr
         url: http://192.168.0.21:5055
@@ -159,7 +165,7 @@ cat > /opt/stacks/lxc-infra/homepage/config/services.yaml << 'SERVICES'
   - Sonarr:
       icon: sonarr.svg
       href: http://192.168.0.21:8989
-      description: Séries
+      description: Series
       widget:
         type: sonarr
         url: http://192.168.0.21:8989
@@ -192,11 +198,11 @@ cat > /opt/stacks/lxc-infra/homepage/config/services.yaml << 'SERVICES'
   - BookStack:
       icon: bookstack.svg
       href: http://192.168.0.24:6875
-      description: Wiki e documentação
+      description: Wiki e documentacao
   - Memos:
       icon: memos.svg
       href: http://192.168.0.24:5230
-      description: Notas rápidas
+      description: Notas rapidas
   - Linkding:
       icon: linkding.svg
       href: http://192.168.0.24:9090
@@ -244,10 +250,8 @@ my-docker:
 DOCKERYAML
 msg_ok "Config da Homepage gerada"
 
-# ── docker-compose.yml do infra ──────────────────────────────────────────────
+# docker-compose.yml
 msg_info "Escrevendo docker-compose.yml"
-mkdir -p /opt/stacks/lxc-infra
-
 cat > /opt/stacks/lxc-infra/docker-compose.yml << 'COMPOSE'
 services:
 
@@ -289,23 +293,20 @@ volumes:
 COMPOSE
 msg_ok "docker-compose.yml criado"
 
-# ── Sobe os containers ───────────────────────────────────────────────────────
+# Sobe os containers
 msg_info "Baixando imagens"
 cd /opt/stacks/lxc-infra
-docker compose pull >/dev/null 2>&1
-msg_ok "Imagens baixadas"
+docker compose pull >/dev/null 2>&1 && msg_ok "Imagens baixadas" || msg_warn "Pull teve avisos"
 
 msg_info "Iniciando containers"
-docker compose up -d >/dev/null 2>&1
-msg_ok "Containers iniciados"
+docker compose up -d 2>&1 && msg_ok "Containers iniciados" || msg_warn "Verifique: docker compose logs"
 
-# ── Update helper ────────────────────────────────────────────────────────────
+# Update helper
 cat > /usr/bin/update << 'UPDATER'
 #!/usr/bin/env bash
 cd /opt/stacks/lxc-infra
 docker compose pull
 docker compose up -d
-echo "Recarregando Caddy..."
 docker exec caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
 echo "Done."
 UPDATER
@@ -315,6 +316,6 @@ IP="$(hostname -I | awk '{print $1}')"
 echo -e "\n${CM} ${GN}Infra instalado!${CL}"
 echo "  Homepage:    http://${IP}"
 echo "  Uptime Kuma: http://${IP}:3001"
-echo
-echo -e "${YW}  Caddy já está fazendo reverse proxy de todos os serviços na porta de cada um.${CL}"
-echo -e "${YW}  Para recarregar config: docker exec caddy caddy reload --config /etc/caddy/Caddyfile${CL}"
+echo ""
+echo "  Para editar servicos: /opt/stacks/lxc-infra/homepage/config/services.yaml"
+echo "  Para recarregar Caddy: docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
