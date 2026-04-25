@@ -23,14 +23,14 @@ msg_ok "Containers antigos removidos"
 
 # ── Caddyfile ────────────────────────────────────────────────────────────────
 # Roteamento por hostname (dominios .lab resolvidos pelo AdGuard no CT dns)
-# Todos os servicos ficam em http://<nome>.lab na porta 80
+# HTTPS local com CA interna do Caddy para a rede .lab
 msg_info "Gerando Caddyfile"
 mkdir -p /opt/stacks/lxc-infra/caddy
 
 cat > /opt/stacks/lxc-infra/caddy/Caddyfile << 'CADDYFILE'
 {
-    auto_https off
     admin off
+    local_certs
 }
 
 # Homepage -- acessivel por IP direto ou pelo dominio
@@ -77,7 +77,7 @@ else
 fi
 
 # ── docker-compose.yml ───────────────────────────────────────────────────────
-# Caddy escuta porta 80 (e 443 para futuro HTTPS).
+# Caddy escuta 80/443 e emite certificados locais via CA interna.
 # Homepage e Uptime Kuma tem portas diretas como fallback caso o DNS .lab
 # ainda nao esteja configurado (acesso por IP:porta funciona sem DNS).
 msg_info "Escrevendo docker-compose.yml"
@@ -160,12 +160,13 @@ chmod +x /usr/bin/update
 
 IP="$(hostname -I | awk '{print $1}')"
 echo -e "\n${CM} ${GN}Infra instalado!${CL}"
-echo "  Homepage:    http://${IP}  ou  http://home.lab"
-echo "  Uptime Kuma: http://${IP}:3001  ou  http://status.lab"
+echo "  Homepage:    https://${IP}  ou  https://home.lab"
+echo "  Uptime Kuma: http://${IP}:3001  ou  https://status.lab"
 echo ""
 echo "  Os dominios .lab so funcionam apos configurar o DNS:"
 echo "  → Deploy o CT dns (AdGuard) e aponte seu DNS para 192.168.0.22"
 echo "  → No Tailscale: Settings > DNS > Add nameserver > 192.168.0.22 (split DNS: lab)"
+echo "  → Para evitar aviso de certificado, confie a CA local do Caddy nos seus dispositivos"
 echo ""
 echo "  Editar Caddyfile:  /opt/stacks/lxc-infra/caddy/Caddyfile"
 echo "  Editar homepage:   /opt/stacks/lxc-infra/homepage/config/"
