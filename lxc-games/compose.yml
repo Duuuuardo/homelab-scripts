@@ -1,0 +1,12 @@
+services:
+  pelican-panel:
+    image: ghcr.io/pelican-dev/panel:latest
+    container_name: pelican-panel
+    restart: unless-stopped
+    ports:
+      - "8084:80"
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./data/pelican:/pelican-data
+      - ./data/caddy:/etc/caddy
