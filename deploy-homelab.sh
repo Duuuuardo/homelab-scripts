@@ -428,7 +428,7 @@ print_summary() {
   printf "  %-14s http://%s\n" "Uptime Kuma" "192.168.0.20:3001"
   printf "  %-14s http://%s\n" "AdGuard"     "192.168.0.22:3000"
   printf "  %-14s http://%s\n" "Jellyfin"    "192.168.0.21:8096"
-  printf "  %-14s http://%s\n" "Overseerr"   "192.168.0.21:5055"
+  printf "  %-14s http://%s\n" "Seerr"       "192.168.0.21:5055"
   printf "  %-14s http://%s\n" "Nextcloud"   "192.168.0.23:8081"
   printf "  %-14s http://%s\n" "BookStack"   "192.168.0.24:6875"
   printf "  %-14s http://%s\n" "Memos"       "192.168.0.24:5230"
@@ -444,7 +444,7 @@ print_summary() {
   echo "  pct exec 107 -- cat /root/utilities-credentials.txt"
   echo
   echo -e "${YW}Atualizar stack:  pct exec <CTID> -- update${CL}"
-  echo -e "${YW}Reload Caddy:     pct exec 100 -- docker exec caddy caddy reload --config /etc/caddy/Caddyfile${CL}"
+  echo -e "${YW}Painel NPM:       pct exec 100 -- docker ps --filter name=nginx-proxy-manager${CL}"
 
   # Mostra o arquivo de credenciais no final
   echo

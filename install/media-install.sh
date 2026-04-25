@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stack: Jellyfin + Sonarr + Radarr + Prowlarr + qBittorrent + Overseerr
+# Stack: Jellyfin + Sonarr + Radarr + Prowlarr + qBittorrent + Seerr
 source /tmp/homelab-install/_lib.sh
 
 echo -e "\n${BL}=== Media (Jellyfin + Arr stack) ===${CL}\n"
@@ -111,17 +111,25 @@ services:
       - "6881:6881"
       - "6881:6881/udp"
 
-  overseerr:
-    image: sctx/overseerr:latest
-    container_name: overseerr
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
     restart: unless-stopped
     environment:
       - LOG_LEVEL=debug
       - TZ=${TZ}
+      - PORT=5055
     volumes:
-      - overseerr_config:/app/config
+      - seerr_config:/app/config
     ports:
       - "5055:5055"
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
 
 volumes:
   jellyfin_config:
@@ -130,7 +138,7 @@ volumes:
   radarr_config:
   prowlarr_config:
   qbittorrent_config:
-  overseerr_config:
+  seerr_config:
 COMPOSE
 msg_ok "docker-compose.yml criado"
 
@@ -152,7 +160,7 @@ chmod +x /usr/bin/update
 IP="$(hostname -I | awk '{print $1}')"
 echo -e "\n${CM} ${GN}Media instalado!${CL}"
 echo "  Jellyfin:    http://${IP}:8096"
-echo "  Overseerr:   http://${IP}:5055"
+echo "  Seerr:       http://${IP}:5055"
 echo "  qBittorrent: http://${IP}:8080  (user: admin / pass: adminadmin)"
 echo "  Sonarr:      http://${IP}:8989"
 echo "  Radarr:      http://${IP}:7878"
