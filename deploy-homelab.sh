@@ -1,174 +1,286 @@
 #!/usr/bin/env bash
-set -euo pipefail
 # =============================================================================
-# Homelab Deploy — Eduardo (Duuuuardo)
-# Proxmox host only. Chama cada ct/XXX.sh no estilo community-scripts.
+# deploy-homelab.sh - Eduardo (Duuuuardo)
+# =============================================================================
+# Cria LXCs via pct (sem UI interativa) e roda os install scripts dentro deles.
+# Os install scripts usam as funções do community-scripts para instalar Docker
+# e subir os compose stacks.
 #
 # Usage:
-#   bash deploy-homelab.sh              # menu interativo
-#   bash deploy-homelab.sh all          # todos os stacks
-#   bash deploy-homelab.sh infra dns    # stacks específicos
+#   ./deploy-homelab.sh              # interativo — pergunta quais stacks
+#   ./deploy-homelab.sh all          # todos
+#   ./deploy-homelab.sh infra dns    # específicos
+#   ./deploy-homelab.sh --yes all    # sem confirmações
+
+set -euo pipefail
+
+# =============================================================================
+# Configuração — ajuste conforme sua rede
 # =============================================================================
 
+BRIDGE="${BRIDGE:-vmbr0}"
+GATEWAY="${GATEWAY:-192.168.0.1}"
+CIDR="${CIDR:-24}"
+DNS_SERVER="${DNS_SERVER:-1.1.1.1}"
+TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
+CONTAINER_STORAGE="${CONTAINER_STORAGE:-local-lvm}"
+TIMEZONE="${TIMEZONE:-America/Sao_Paulo}"
+DEBIAN_VERSION="${DEBIAN_VERSION:-12}"
+
+# URL do teu repo — os install scripts clonam isso dentro do LXC
+REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
+REPO_BRANCH="${REPO_BRANCH:-main}"
+
+# Arquivo onde ficam os scripts de install (relativo a este script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="${SCRIPT_DIR}/install"
 
-# Ordem recomendada de deploy
-ALL_STACKS=(infra dns media cloud knowledge games utilities)
-
-# IPs fixos por stack — ajuste se sua rede for diferente
-declare -A CT_IP=(
-  [infra]=192.168.0.20
-  [dns]=192.168.0.22
-  [media]=192.168.0.21
-  [cloud]=192.168.0.23
-  [knowledge]=192.168.0.24
-  [games]=192.168.0.25
-  [utilities]=192.168.0.27
+# CTID : hostname : IP : cpu : ram_mb : disk_gb : stack_folder
+declare -A CT=(
+  [infra]="100:infra:192.168.0.20:2:2048:16:lxc-infra"
+  [media]="101:media:192.168.0.21:4:8192:120:lxc-media"
+  [dns]="102:dns:192.168.0.22:1:1024:8:lxc-dns"
+  [cloud]="103:cloud:192.168.0.23:4:4096:64:lxc-cloud"
+  [knowledge]="104:knowledge:192.168.0.24:2:2048:16:lxc-knowledge"
+  [games]="105:games:192.168.0.25:4:8192:64:lxc-games"
+  [utilities]="107:utilities:192.168.0.27:2:4096:32:lxc-utilities"
 )
 
-declare -A CT_ID=(
-  [infra]=100
-  [dns]=102
-  [media]=101
-  [cloud]=103
-  [knowledge]=104
-  [games]=105
-  [utilities]=107
-)
+ALL_STACKS=(infra media dns cloud knowledge games utilities)
 
-# ── Cores ────────────────────────────────────────────────────────────────────
-RD='\033[01;31m'
-GN='\033[1;92m'
-YW='\033[33m'
-BL='\033[36m'
-CL='\033[m'
-BOLD='\033[1m'
+AUTO_YES="${AUTO_YES:-0}"
+for arg in "$@"; do
+  [[ "$arg" == "--yes" || "$arg" == "-y" ]] && AUTO_YES=1
+done
 
+# =============================================================================
+# Helpers
+# =============================================================================
+
+RD='\033[01;31m'; GN='\033[1;92m'; YW='\033[33m'; CL='\033[m'; BL='\033[36m'
 msg()  { echo -e "${GN}✔${CL} $*"; }
-info() { echo -e "${BL}➜${CL} $*"; }
+info() { echo -e "${BL}→${CL} $*"; }
 warn() { echo -e "${YW}⚠${CL}  $*"; }
-die()  { echo -e "${RD}✘${CL}  $*" >&2; exit 1; }
+die()  { echo -e "${RD}✖${CL}  $*" >&2; exit 1; }
 
-header() {
-  clear
-  cat <<'EOF'
-
-  _    _                      _       _     
- | |  | |                    | |     | |    
- | |__| | ___  _ __ ___   ___| | __ _| |__  
- |  __  |/ _ \| '_ ` _ \ / _ \ |/ _` | '_ \ 
- | |  | | (_) | | | | | |  __/ | (_| | |_) |
- |_|  |_|\___/|_| |_| |_|\___|_|\__,_|_.__/ 
-
-EOF
-  echo -e "  ${BOLD}Homelab Deploy — Eduardo (Duuuuardo)${CL}"
-  echo -e "  Proxmox host: $(hostname) | $(date '+%Y-%m-%d %H:%M')\n"
+confirm() {
+  [[ "$AUTO_YES" == "1" ]] && return 0
+  read -r -p "$1 [y/N] " ans
+  [[ "$ans" =~ ^[Yy] ]]
 }
 
-# ── Pré-checks ───────────────────────────────────────────────────────────────
 require_root() {
-  [[ "${EUID}" -eq 0 ]] || die "Execute como root no host Proxmox."
+  [[ "${EUID}" -eq 0 ]] || die "Run as root on the Proxmox host."
 }
 
 check_proxmox() {
-  command -v pct   >/dev/null 2>&1 || die "pct não encontrado. Execute no host Proxmox."
-  command -v pveam >/dev/null 2>&1 || die "pveam não encontrado. Execute no host Proxmox."
+  command -v pct   >/dev/null 2>&1 || die "pct not found. Run on Proxmox host."
+  command -v pveam >/dev/null 2>&1 || die "pveam not found. Run on Proxmox host."
 }
 
-# ── Deploy de um stack ────────────────────────────────────────────────────────
-deploy_stack() {
-  local stack="$1"
-  local ct_script="${SCRIPT_DIR}/ct/${stack}.sh"
+# =============================================================================
+# Template
+# =============================================================================
 
-  if [[ ! -f "$ct_script" ]]; then
-    warn "ct/${stack}.sh não encontrado — pulando"
+find_or_download_template() {
+  local dir
+  dir="$(pvesm path "${TEMPLATE_STORAGE}:vztmpl" 2>/dev/null || echo "/var/lib/vz/template/cache")"
+  mkdir -p "$dir"
+
+  local existing
+  existing="$(find "$dir" -maxdepth 1 -name "debian-${DEBIAN_VERSION}-standard_*.tar.zst" | sort -V | tail -n1 || true)"
+  if [[ -n "$existing" ]]; then
+    echo "${TEMPLATE_STORAGE}:vztmpl/$(basename "$existing")"
     return
   fi
 
-  local ctid="${CT_ID[$stack]:-}"
-  local ip="${CT_IP[$stack]:-}"
-
-  echo
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  info "Stack: ${BOLD}${stack}${CL}  CT ${ctid} @ ${ip}"
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-
-  # Passa IP/CTID fixos para o build.func usar quando possível
-  # (build.func respeita CT_IP_ADDRESS e CTID se definidos)
-  CTID="$ctid" \
-  CT_IP_ADDRESS="$ip" \
-    bash "$ct_script"
+  info "Baixando template Debian ${DEBIAN_VERSION}..."
+  pveam update >/dev/null
+  local tmpl
+  tmpl="$(pveam available --section system | awk '{print $2}' | grep "debian-${DEBIAN_VERSION}-standard" | sort -V | tail -n1)"
+  [[ -n "$tmpl" ]] || die "Template Debian ${DEBIAN_VERSION} não encontrado."
+  pveam download "$TEMPLATE_STORAGE" "$tmpl" >/dev/null
+  echo "${TEMPLATE_STORAGE}:vztmpl/$(basename "$tmpl")"
 }
 
-# ── Resumo final ──────────────────────────────────────────────────────────────
+# =============================================================================
+# Criação do LXC
+# =============================================================================
+
+create_lxc() {
+  local ctid="$1" hostname="$2" ip="$3" cpu="$4" ram="$5" disk="$6" template="$7"
+
+  if pct status "$ctid" >/dev/null 2>&1; then
+    info "CT ${ctid} (${hostname}) já existe — pulando criação."
+    return
+  fi
+
+  info "Criando CT ${ctid} (${hostname}) @ ${ip}..."
+
+  pct create "$ctid" "$template" \
+    --hostname "$hostname" \
+    --cores "$cpu" \
+    --memory "$ram" \
+    --swap 512 \
+    --rootfs "${CONTAINER_STORAGE}:${disk}" \
+    --net0 "name=eth0,bridge=${BRIDGE},ip=${ip}/${CIDR},gw=${GATEWAY}" \
+    --nameserver "$DNS_SERVER" \
+    --ostype debian \
+    --unprivileged 0 \
+    --features "nesting=1,keyctl=1" \
+    --onboot 1 \
+    --tags "homelab;docker;${hostname}"
+
+  msg "CT ${ctid} criado."
+}
+
+start_lxc() {
+  local ctid="$1"
+  if ! pct status "$ctid" 2>/dev/null | grep -q "running"; then
+    info "Iniciando CT ${ctid}..."
+    pct start "$ctid"
+    sleep 8
+  fi
+}
+
+fix_apt_ipv4() {
+  local ctid="$1"
+  # Força IPv4 no apt — resolve o bug de IPv6 sem rota em home labs
+  pct exec "$ctid" -- bash -c \
+    'echo '"'"'Acquire::ForceIPv4 "true";'"'"' > /etc/apt/apt.conf.d/99force-ipv4'
+}
+
+set_timezone() {
+  local ctid="$1"
+  pct exec "$ctid" -- bash -c \
+    "ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime 2>/dev/null || true"
+}
+
+# =============================================================================
+# Roda o install script dentro do LXC
+# =============================================================================
+
+run_install_script() {
+  local ctid="$1"
+  local stack="$2"
+  local install_script="${INSTALL_DIR}/${stack}-install.sh"
+
+  if [[ ! -f "$install_script" ]]; then
+    warn "install/${stack}-install.sh não encontrado — pulando."
+    return
+  fi
+
+  info "Rodando install/${stack}-install.sh no CT ${ctid}..."
+
+  # Copia o script pro LXC e executa
+  pct push "$ctid" "$install_script" /tmp/install.sh
+  pct exec "$ctid" -- bash /tmp/install.sh
+  pct exec "$ctid" -- rm -f /tmp/install.sh
+
+  msg "Install do stack '${stack}' concluído no CT ${ctid}."
+}
+
+# =============================================================================
+# Deploy de um stack
+# =============================================================================
+
+deploy_stack() {
+  local name="$1"
+  local spec="${CT[$name]}"
+
+  IFS=":" read -r ctid hostname ip cpu ram disk stack_folder <<< "$spec"
+
+  echo
+  echo -e "${BL}══════════════════════════════════════${CL}"
+  echo -e "${BL} Stack: ${name} │ CT ${ctid} │ ${ip}${CL}"
+  echo -e "${BL}══════════════════════════════════════${CL}"
+
+  local template
+  template="$(find_or_download_template)"
+
+  create_lxc "$ctid" "$hostname" "$ip" "$cpu" "$ram" "$disk" "$template"
+  start_lxc "$ctid"
+  fix_apt_ipv4 "$ctid"
+  set_timezone "$ctid"
+  run_install_script "$ctid" "$name"
+}
+
+# =============================================================================
+# Main
+# =============================================================================
+
 print_summary() {
   echo
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
-  echo -e "${GN}  Deploy finalizado!${CL}"
-  echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${CL}"
+  msg "Deploy finalizado."
   echo
-  echo -e "  ${BOLD}URLs principais:${CL}"
-  echo "    NPM:        http://192.168.0.20:81"
-  echo "    Homepage:   http://192.168.0.20:3000"
-  echo "    Uptime:     http://192.168.0.20:3001"
-  echo "    AdGuard:    http://192.168.0.22:3000"
-  echo "    Jellyfin:   http://192.168.0.21:8096"
-  echo "    Seerr:      http://192.168.0.21:5055"
-  echo "    Nextcloud:  http://192.168.0.23:8081"
-  echo "    BookStack:  http://192.168.0.24:6875"
-  echo "    Memos:      http://192.168.0.24:5230"
-  echo "    Linkding:   http://192.168.0.24:9090"
-  echo "    Whoogle:    http://192.168.0.27:5000"
-  echo "    Actual:     http://192.168.0.27:5006"
-  echo "    Neko:       http://192.168.0.27:8080"
-  echo "    Pelican:    http://192.168.0.25:8084"
+  echo -e "${GN}URLs principais:${CL}"
+  echo "  NPM:        http://192.168.0.20:81"
+  echo "  Homepage:   http://192.168.0.20:3000"
+  echo "  Uptime:     http://192.168.0.20:3001"
+  echo "  AdGuard:    http://192.168.0.22:3000"
+  echo "  Jellyfin:   http://192.168.0.21:8096"
+  echo "  Overseerr:  http://192.168.0.21:5055"
+  echo "  Nextcloud:  http://192.168.0.23:8081"
+  echo "  BookStack:  http://192.168.0.24:6875"
+  echo "  Memos:      http://192.168.0.24:5230"
+  echo "  Linkding:   http://192.168.0.24:9090"
   echo
-  echo -e "  ${YW}Credenciais geradas ficam dentro de cada LXC:${CL}"
-  echo "    pct exec 103 -- cat /root/cloud-credentials.txt"
-  echo "    pct exec 104 -- cat /root/knowledge-credentials.txt"
-  echo "    pct exec 107 -- cat /root/utilities-credentials.txt"
-  echo
-  echo -e "  ${YW}Atualizar um stack:${CL}"
-  echo "    pct exec <CTID> -- update"
-  echo
-  echo -e "  ${YW}Próximos passos manuais:${CL}"
-  echo "    1. AdGuard DNS rewrites  → docs/adguard.md"
-  echo "    2. NPM proxy hosts       → docs/nginx-proxy-manager.md"
-  echo "    3. Media setup (Arr)     → docs/media-setup.md"
-  echo "    4. Tailscale             → docs/tailscale-proxmox.md"
-  echo "    5. CT 106 deploy (Dokploy) → docs/dokploy.md"
-  echo
+  echo -e "${YW}Credenciais geradas ficam em /root/*-credentials.txt dentro de cada LXC.${CL}"
+  echo -e "${YW}Para atualizar um stack: pct exec <CTID> -- update${CL}"
 }
 
-# ── Main ──────────────────────────────────────────────────────────────────────
 main() {
   require_root
   check_proxmox
-  header
+
+  # Filtra args que não são flags
+  local raw_targets=()
+  for arg in "$@"; do
+    [[ "$arg" == "--yes" || "$arg" == "-y" ]] && continue
+    raw_targets+=("$arg")
+  done
 
   local targets=()
 
-  if [[ $# -eq 0 ]]; then
-    echo -e "  ${BOLD}Stacks disponíveis:${CL}"
+  if [[ ${#raw_targets[@]} -eq 0 ]]; then
+    echo
+    echo "Stacks disponíveis:"
     for s in "${ALL_STACKS[@]}"; do
-      echo "    ${s}  (CT ${CT_ID[$s]:-?} @ ${CT_IP[$s]:-?})"
+      IFS=":" read -r ctid _ ip _ <<< "${CT[$s]}"
+      echo "  ${s}  (CT ${ctid} @ ${ip})"
     done
     echo
-    read -r -p "  Quais stacks deployar? (ex: infra dns | all): " input
-    IFS=' ' read -r -a targets <<< "$input"
-  else
-    targets=("$@")
+    read -r -p "Quais stacks deployar? (ex: infra media, ou 'all'): " input
+    IFS=' ' read -r -a raw_targets <<< "$input"
   fi
 
-  if [[ "${targets[*]:-}" == "all" ]]; then
+  if [[ "${raw_targets[*]:-}" == "all" ]]; then
     targets=("${ALL_STACKS[@]}")
+  else
+    for t in "${raw_targets[@]}"; do
+      if [[ -n "${CT[$t]:-}" ]]; then
+        targets+=("$t")
+      else
+        warn "Stack desconhecido: '${t}' — ignorando."
+      fi
+    done
   fi
+
+  [[ ${#targets[@]} -eq 0 ]] && die "Nenhum stack válido selecionado."
+
+  echo
+  echo "Stacks a deployar:"
+  for t in "${targets[@]}"; do
+    IFS=":" read -r ctid _ ip _ <<< "${CT[$t]}"
+    echo "  ${t}  (CT ${ctid} @ ${ip})"
+  done
+  echo
+
+  confirm "Continuar?" || { echo "Cancelado."; exit 0; }
+
+  apt-get install -y git curl rsync openssl >/dev/null 2>&1 || true
 
   for stack in "${targets[@]}"; do
-    if [[ ! " ${ALL_STACKS[*]} " =~ " ${stack} " ]]; then
-      warn "Stack desconhecido: '${stack}' — ignorando"
-      continue
-    fi
     deploy_stack "$stack"
   done
 

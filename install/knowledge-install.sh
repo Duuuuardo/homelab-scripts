@@ -1,90 +1,54 @@
 #!/usr/bin/env bash
-# Author: Eduardo (Duuuuardo)
-# Roda DENTRO do LXC knowledge.
-# Stack: BookStack + MariaDB + Memos + Linkding
+# Stack: BookStack + Memos + Linkding
+source "$(dirname "$0")/_lib.sh"
 
-source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
-color
-verb_ip6
-catch_errors
-setting_up_container
-network_check
-update_os
+REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
+STACK="lxc-knowledge"
 
-msg_info "Configuring apt"
-echo 'Acquire::ForceIPv4 "true";' >/etc/apt/apt.conf.d/99force-ipv4
-msg_ok "Configured apt"
+echo -e "\n${BL}══ Knowledge (BookStack + Memos + Linkding) ══${CL}\n"
 
-msg_info "Setting up Docker repository"
-setup_deb822_repo \
-  "docker" \
-  "https://download.docker.com/linux/$(get_os_info id)/gpg" \
-  "https://download.docker.com/linux/$(get_os_info id)" \
-  "$(get_os_info codename)" \
-  "stable" \
-  "$(dpkg --print-architecture)"
-msg_ok "Docker repository configured"
+base_setup
+install_docker
+clone_repo "$REPO_URL"
 
-msg_info "Installing Docker"
-$STD apt-get install -y \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-buildx-plugin \
-  docker-compose-plugin
-$STD systemctl enable --now docker
-msg_ok "Installed Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+msg_info "Preparando stack Knowledge"
+mkdir -p "/opt/stacks/${STACK}"
+cp -r "/opt/homelab-scripts/${STACK}/." "/opt/stacks/${STACK}/"
+cd "/opt/stacks/${STACK}"
+[[ ! -f .env && -f .env.example ]] && cp .env.example .env
 
-msg_info "Cloning homelab repo"
-$STD apt-get install -y git
-$STD git clone --depth 1 https://github.com/Duuuuardo/homelab-scripts.git /opt/homelab-scripts
-msg_ok "Cloned homelab repo"
-
-msg_info "Deploying knowledge stack"
-STACK_DIR="/opt/stacks/lxc-knowledge"
-mkdir -p "$STACK_DIR"
-cp -r /opt/homelab-scripts/lxc-knowledge/. "$STACK_DIR/"
-cd "$STACK_DIR"
-[[ ! -f .env ]] && cp .env.example .env
-
-BS_ROOT_PW="$(openssl rand -base64 24 | tr -d '/+=')"
-BS_PW="$(openssl rand -base64 24 | tr -d '/+=')"
-LD_PW="$(openssl rand -base64 16 | tr -d '/+=')"
+BS_ROOT_PW="$(rnd_pw)"
+BS_PW="$(rnd_pw)"
+LD_PW="$(rnd_pw)"
 
 sed -i "s|^BOOKSTACK_DB_ROOT_PASSWORD=.*|BOOKSTACK_DB_ROOT_PASSWORD=${BS_ROOT_PW}|" .env
 sed -i "s|^BOOKSTACK_DB_PASSWORD=.*|BOOKSTACK_DB_PASSWORD=${BS_PW}|" .env
 sed -i "s|^LINKDING_SUPERUSER_PASSWORD=.*|LINKDING_SUPERUSER_PASSWORD=${LD_PW}|" .env
+msg_ok "Senhas geradas"
 
-cat >/root/knowledge-credentials.txt <<EOF
+msg_info "Baixando imagens Docker"
+docker compose pull >/dev/null 2>&1
+msg_ok "Imagens baixadas"
+
+msg_info "Iniciando containers"
+docker compose up -d >/dev/null 2>&1
+msg_ok "Containers iniciados"
+
+make_update_helper "/opt/stacks/${STACK}"
+
+cat > /root/knowledge-credentials.txt << EOF
 Knowledge Stack Credentials
-Generated: $(date -Is)
-
-BookStack:  http://$(hostname -I | awk '{print $1}'):6875
-Memos:      http://$(hostname -I | awk '{print $1}'):5230
-Linkding:   http://$(hostname -I | awk '{print $1}'):9090
+Gerado: $(date -Is)
 
 BookStack DB root: ${BS_ROOT_PW}
 BookStack DB pw:   ${BS_PW}
-Linkding admin:    admin / ${LD_PW}
+Linkding admin pw: ${LD_PW}
 EOF
 chmod 600 /root/knowledge-credentials.txt
 
-$STD docker compose pull
-$STD docker compose up -d
-msg_ok "Deployed knowledge stack"
-
-echo -e "${INFO}${YW} Credentials saved to /root/knowledge-credentials.txt${CL}"
-
-cat >/usr/bin/update <<'EOF'
-#!/usr/bin/env bash
-set -e
-cd /opt/stacks/lxc-knowledge
-git -C /opt/homelab-scripts pull --ff-only 2>/dev/null || true
-cp -r /opt/homelab-scripts/lxc-knowledge/compose.yml .
-docker compose pull
-docker compose up -d
-echo "Knowledge stack updated."
-EOF
-chmod +x /usr/bin/update
-
-msg_ok "Install complete"
+echo -e "\n${CM} ${GN}Knowledge instalado!${CL}"
+IP="$(hostname -I | awk '{print $1}')"
+echo "  BookStack: http://${IP}:6875"
+echo "  Memos:     http://${IP}:5230"
+echo "  Linkding:  http://${IP}:9090"
+echo "  Credenciais salvas em: /root/knowledge-credentials.txt"

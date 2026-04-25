@@ -1,80 +1,39 @@
 #!/usr/bin/env bash
-# Author: Eduardo (Duuuuardo)
-# Roda DENTRO do LXC media (privileged).
-# Stack: Jellyfin + Sonarr + Radarr + Prowlarr + FlareSolverr + qBittorrent + Bazarr + Seerr + Unpackerr
+# Stack: Jellyfin + Sonarr + Radarr + Prowlarr + qBittorrent + Overseerr
+source "$(dirname "$0")/_lib.sh"
 
-source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
-color
-verb_ip6
-catch_errors
-setting_up_container
-network_check
-update_os
+REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
+STACK="lxc-media"
 
-msg_info "Configuring apt"
-echo 'Acquire::ForceIPv4 "true";' >/etc/apt/apt.conf.d/99force-ipv4
-msg_ok "Configured apt"
+echo -e "\n${BL}══ Media (Jellyfin + Arr stack) ══${CL}\n"
 
-msg_info "Setting up Docker repository"
-setup_deb822_repo \
-  "docker" \
-  "https://download.docker.com/linux/$(get_os_info id)/gpg" \
-  "https://download.docker.com/linux/$(get_os_info id)" \
-  "$(get_os_info codename)" \
-  "stable" \
-  "$(dpkg --print-architecture)"
-msg_ok "Docker repository configured"
+base_setup
 
-msg_info "Installing Docker"
-$STD apt-get install -y \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-buildx-plugin \
-  docker-compose-plugin
-$STD systemctl enable --now docker
-msg_ok "Installed Docker $(docker --version | awk '{print $3}' | tr -d ',')"
-
-# Intel VA-API para hardware transcoding do Jellyfin
+# VA-API para HW transcoding do Jellyfin
 if [[ -d /dev/dri ]]; then
-  msg_info "Installing Intel VA-API drivers"
-  $STD apt-get install -y vainfo intel-media-va-driver-non-free 2>/dev/null || \
-    $STD apt-get install -y vainfo intel-media-va-driver 2>/dev/null || true
-  msg_ok "VA-API drivers installed"
+  msg_info "Instalando drivers VA-API (GPU detectada)"
+  apt-get install -y vainfo intel-media-va-driver-non-free 2>/dev/null \
+    || apt-get install -y vainfo intel-media-va-driver 2>/dev/null || true
+  msg_ok "Drivers VA-API instalados"
 else
-  msg_info "No /dev/dri — skipping VA-API (configure GPU passthrough in Proxmox if needed)"
+  msg_warn "Sem /dev/dri — configure GPU passthrough no Proxmox se quiser HW transcoding"
 fi
 
-msg_info "Creating /data directories"
+msg_info "Criando diretórios de mídia"
 mkdir -p /data/{downloads,torrents,movies,tv,music}
 chown -R 1000:1000 /data
-msg_ok "Created /data structure"
+msg_ok "Diretórios criados em /data"
 
-msg_info "Cloning homelab repo"
-$STD apt-get install -y git
-$STD git clone --depth 1 https://github.com/Duuuuardo/homelab-scripts.git /opt/homelab-scripts
-msg_ok "Cloned homelab repo"
+install_docker
+clone_repo "$REPO_URL"
+deploy_stack "$STACK"
+make_update_helper "/opt/stacks/${STACK}"
 
-msg_info "Deploying media stack"
-STACK_DIR="/opt/stacks/lxc-media"
-mkdir -p "$STACK_DIR"
-cp -r /opt/homelab-scripts/lxc-media/. "$STACK_DIR/"
-cd "$STACK_DIR"
-[[ ! -f .env ]] && cp .env.example .env
-$STD docker compose pull
-$STD docker compose up -d
-msg_ok "Deployed media stack"
-
-cat >/usr/bin/update <<'EOF'
-#!/usr/bin/env bash
-set -e
-cd /opt/stacks/lxc-media
-git -C /opt/homelab-scripts pull --ff-only 2>/dev/null || true
-cp -r /opt/homelab-scripts/lxc-media/compose.yml .
-docker compose pull
-docker compose up -d
-echo "Media stack updated."
-EOF
-chmod +x /usr/bin/update
-
-msg_ok "Install complete"
+echo -e "\n${CM} ${GN}Media instalado!${CL}"
+IP="$(hostname -I | awk '{print $1}')"
+echo "  Jellyfin:    http://${IP}:8096"
+echo "  Overseerr:   http://${IP}:5055"
+echo "  qBittorrent: http://${IP}:8080"
+echo "  Sonarr:      http://${IP}:8989"
+echo "  Radarr:      http://${IP}:7878"
+echo "  Prowlarr:    http://${IP}:9696"

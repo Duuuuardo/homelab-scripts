@@ -1,89 +1,48 @@
 #!/usr/bin/env bash
-# Author: Eduardo (Duuuuardo)
-# Roda DENTRO do LXC utilities.
-# Stack: Whoogle + Actual Budget + Neko
+# Stack: Neko + utils
+source "$(dirname "$0")/_lib.sh"
 
-source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
-color
-verb_ip6
-catch_errors
-setting_up_container
-network_check
-update_os
+REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
+STACK="lxc-utilities"
 
-msg_info "Configuring apt"
-echo 'Acquire::ForceIPv4 "true";' >/etc/apt/apt.conf.d/99force-ipv4
-msg_ok "Configured apt"
+echo -e "\n${BL}══ Utilities (Neko + utils) ══${CL}\n"
 
-msg_info "Setting up Docker repository"
-setup_deb822_repo \
-  "docker" \
-  "https://download.docker.com/linux/$(get_os_info id)/gpg" \
-  "https://download.docker.com/linux/$(get_os_info id)" \
-  "$(get_os_info codename)" \
-  "stable" \
-  "$(dpkg --print-architecture)"
-msg_ok "Docker repository configured"
+base_setup
+install_docker
+clone_repo "$REPO_URL"
 
-msg_info "Installing Docker"
-$STD apt-get install -y \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-buildx-plugin \
-  docker-compose-plugin
-$STD systemctl enable --now docker
-msg_ok "Installed Docker $(docker --version | awk '{print $3}' | tr -d ',')"
+msg_info "Preparando stack Utilities"
+mkdir -p "/opt/stacks/${STACK}"
+cp -r "/opt/homelab-scripts/${STACK}/." "/opt/stacks/${STACK}/"
+cd "/opt/stacks/${STACK}"
+[[ ! -f .env && -f .env.example ]] && cp .env.example .env
 
-msg_info "Cloning homelab repo"
-$STD apt-get install -y git
-$STD git clone --depth 1 https://github.com/Duuuuardo/homelab-scripts.git /opt/homelab-scripts
-msg_ok "Cloned homelab repo"
-
-msg_info "Deploying utilities stack"
-STACK_DIR="/opt/stacks/lxc-utilities"
-mkdir -p "$STACK_DIR"
-cp -r /opt/homelab-scripts/lxc-utilities/. "$STACK_DIR/"
-cd "$STACK_DIR"
-[[ ! -f .env ]] && cp .env.example .env
-
-NEKO_PW="$(openssl rand -base64 16 | tr -d '/+=')"
-NEKO_ADMIN_PW="$(openssl rand -base64 16 | tr -d '/+=')"
+NEKO_PW="$(rnd_pw)"
+NEKO_ADMIN_PW="$(rnd_pw)"
 
 sed -i "s|^NEKO_PASSWORD=.*|NEKO_PASSWORD=${NEKO_PW}|" .env
 sed -i "s|^NEKO_ADMIN_PASSWORD=.*|NEKO_ADMIN_PASSWORD=${NEKO_ADMIN_PW}|" .env
+msg_ok "Senhas geradas"
 
-cat >/root/utilities-credentials.txt <<EOF
+msg_info "Baixando imagens Docker"
+docker compose pull >/dev/null 2>&1
+msg_ok "Imagens baixadas"
+
+msg_info "Iniciando containers"
+docker compose up -d >/dev/null 2>&1
+msg_ok "Containers iniciados"
+
+make_update_helper "/opt/stacks/${STACK}"
+
+cat > /root/utilities-credentials.txt << EOF
 Utilities Stack Credentials
-Generated: $(date -Is)
+Gerado: $(date -Is)
 
-Whoogle: http://$(hostname -I | awk '{print $1}'):5000
-Actual:  http://$(hostname -I | awk '{print $1}'):5006
-Neko:    http://$(hostname -I | awk '{print $1}'):8080
-
-Neko user pw:  ${NEKO_PW}
-Neko admin pw: ${NEKO_ADMIN_PW}
-
-Nota: ajuste NEKO_NAT1TO1 no .env com o IP do host Proxmox se WebRTC não conectar.
+Neko user password:  ${NEKO_PW}
+Neko admin password: ${NEKO_ADMIN_PW}
 EOF
 chmod 600 /root/utilities-credentials.txt
 
-$STD docker compose pull
-$STD docker compose up -d
-msg_ok "Deployed utilities stack"
-
-echo -e "${INFO}${YW} Credentials saved to /root/utilities-credentials.txt${CL}"
-
-cat >/usr/bin/update <<'EOF'
-#!/usr/bin/env bash
-set -e
-cd /opt/stacks/lxc-utilities
-git -C /opt/homelab-scripts pull --ff-only 2>/dev/null || true
-cp -r /opt/homelab-scripts/lxc-utilities/compose.yml .
-docker compose pull
-docker compose up -d
-echo "Utilities stack updated."
-EOF
-chmod +x /usr/bin/update
-
-msg_ok "Install complete"
+echo -e "\n${CM} ${GN}Utilities instalado!${CL}"
+echo "  Neko: http://$(hostname -I | awk '{print $1}'):8080"
+echo "  Credenciais salvas em: /root/utilities-credentials.txt"

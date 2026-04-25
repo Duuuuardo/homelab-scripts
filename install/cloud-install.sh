@@ -1,95 +1,60 @@
 #!/usr/bin/env bash
-# Author: Eduardo (Duuuuardo)
-# Roda DENTRO do LXC cloud.
-# Stack: Nextcloud + MariaDB + Redis
+# Stack: Nextcloud + MariaDB
+source "$(dirname "$0")/_lib.sh"
 
-source /dev/stdin <<<"$FUNCTIONS_FILE_PATH"
-color
-verb_ip6
-catch_errors
-setting_up_container
-network_check
-update_os
+REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
+STACK="lxc-cloud"
 
-msg_info "Configuring apt"
-echo 'Acquire::ForceIPv4 "true";' >/etc/apt/apt.conf.d/99force-ipv4
-msg_ok "Configured apt"
+echo -e "\n${BL}══ Cloud (Nextcloud) ══${CL}\n"
 
-msg_info "Setting up Docker repository"
-setup_deb822_repo \
-  "docker" \
-  "https://download.docker.com/linux/$(get_os_info id)/gpg" \
-  "https://download.docker.com/linux/$(get_os_info id)" \
-  "$(get_os_info codename)" \
-  "stable" \
-  "$(dpkg --print-architecture)"
-msg_ok "Docker repository configured"
+base_setup
 
-msg_info "Installing Docker"
-$STD apt-get install -y \
-  docker-ce \
-  docker-ce-cli \
-  containerd.io \
-  docker-buildx-plugin \
-  docker-compose-plugin
-$STD systemctl enable --now docker
-msg_ok "Installed Docker $(docker --version | awk '{print $3}' | tr -d ',')"
-
-msg_info "Creating /data/cloud"
+msg_info "Criando diretório de dados"
 mkdir -p /data/cloud
 chown -R 33:33 /data/cloud
-msg_ok "Created /data/cloud"
+msg_ok "Diretório /data/cloud criado"
 
-msg_info "Cloning homelab repo"
-$STD apt-get install -y git
-$STD git clone --depth 1 https://github.com/Duuuuardo/homelab-scripts.git /opt/homelab-scripts
-msg_ok "Cloned homelab repo"
+install_docker
+clone_repo "$REPO_URL"
 
-msg_info "Deploying cloud stack"
-STACK_DIR="/opt/stacks/lxc-cloud"
-mkdir -p "$STACK_DIR"
-cp -r /opt/homelab-scripts/lxc-cloud/. "$STACK_DIR/"
-cd "$STACK_DIR"
-[[ ! -f .env ]] && cp .env.example .env
+# Copia stack e gera senhas antes de subir
+msg_info "Preparando stack Nextcloud"
+mkdir -p "/opt/stacks/${STACK}"
+cp -r "/opt/homelab-scripts/${STACK}/." "/opt/stacks/${STACK}/"
+cd "/opt/stacks/${STACK}"
+[[ ! -f .env && -f .env.example ]] && cp .env.example .env
 
-# Gera senhas seguras e substitui no .env
-DB_ROOT_PW="$(openssl rand -base64 24 | tr -d '/+=')"
-DB_PW="$(openssl rand -base64 24 | tr -d '/+=')"
-ADMIN_PW="$(openssl rand -base64 16 | tr -d '/+=')"
+DB_ROOT_PW="$(rnd_pw)"
+DB_PW="$(rnd_pw)"
+ADMIN_PW="$(rnd_pw)"
 
 sed -i "s|^MYSQL_ROOT_PASSWORD=.*|MYSQL_ROOT_PASSWORD=${DB_ROOT_PW}|" .env
 sed -i "s|^MYSQL_PASSWORD=.*|MYSQL_PASSWORD=${DB_PW}|" .env
 sed -i "s|^NEXTCLOUD_ADMIN_PASSWORD=.*|NEXTCLOUD_ADMIN_PASSWORD=${ADMIN_PW}|" .env
+msg_ok "Senhas geradas"
 
-cat >/root/cloud-credentials.txt <<EOF
+msg_info "Baixando imagens Docker"
+docker compose pull >/dev/null 2>&1
+msg_ok "Imagens baixadas"
+
+msg_info "Iniciando containers"
+docker compose up -d >/dev/null 2>&1
+msg_ok "Containers iniciados"
+
+make_update_helper "/opt/stacks/${STACK}"
+
+cat > /root/nextcloud-credentials.txt << EOF
 Nextcloud Credentials
-Generated: $(date -Is)
+Gerado: $(date -Is)
 
-URL:            http://$(hostname -I | awk '{print $1}'):8081
-Admin user:     admin
-Admin password: ${ADMIN_PW}
+Admin user:       admin
+Admin password:   ${ADMIN_PW}
 
-DB root:    ${DB_ROOT_PW}
-DB user pw: ${DB_PW}
+DB root password: ${DB_ROOT_PW}
+DB password:      ${DB_PW}
 EOF
-chmod 600 /root/cloud-credentials.txt
+chmod 600 /root/nextcloud-credentials.txt
 
-$STD docker compose pull
-$STD docker compose up -d
-msg_ok "Deployed cloud stack"
-
-echo -e "${INFO}${YW} Credentials saved to /root/cloud-credentials.txt${CL}"
-
-cat >/usr/bin/update <<'EOF'
-#!/usr/bin/env bash
-set -e
-cd /opt/stacks/lxc-cloud
-git -C /opt/homelab-scripts pull --ff-only 2>/dev/null || true
-cp -r /opt/homelab-scripts/lxc-cloud/compose.yml .
-docker compose pull
-docker compose up -d
-echo "Cloud stack updated."
-EOF
-chmod +x /usr/bin/update
-
-msg_ok "Install complete"
+echo -e "\n${CM} ${GN}Cloud instalado!${CL}"
+echo "  Nextcloud: http://$(hostname -I | awk '{print $1}'):8081"
+echo "  Credenciais salvas em: /root/nextcloud-credentials.txt"
