@@ -2,20 +2,20 @@
 # =============================================================================
 # deploy-homelab.sh - Eduardo (Duuuuardo)
 # =============================================================================
-# Cria LXCs via pct (sem UI interativa) e roda os install scripts dentro deles.
-# Os install scripts usam as funções do community-scripts para instalar Docker
-# e subir os compose stacks.
+# Cria LXCs via pct, instala Tailscale no PVE host, e roda os install
+# scripts dentro de cada LXC (Docker + compose stacks + Caddy + Homepage).
 #
 # Usage:
-#   ./deploy-homelab.sh              # interativo — pergunta quais stacks
-#   ./deploy-homelab.sh all          # todos
+#   ./deploy-homelab.sh              # interativo
+#   ./deploy-homelab.sh all          # todos os stacks
 #   ./deploy-homelab.sh infra dns    # específicos
 #   ./deploy-homelab.sh --yes all    # sem confirmações
+#   ./deploy-homelab.sh --skip-tailscale all
 
 set -euo pipefail
 
 # =============================================================================
-# Configuração — ajuste conforme sua rede
+# Config — ajuste conforme sua rede
 # =============================================================================
 
 BRIDGE="${BRIDGE:-vmbr0}"
@@ -26,31 +26,32 @@ TEMPLATE_STORAGE="${TEMPLATE_STORAGE:-local}"
 CONTAINER_STORAGE="${CONTAINER_STORAGE:-local-lvm}"
 TIMEZONE="${TIMEZONE:-America/Sao_Paulo}"
 DEBIAN_VERSION="${DEBIAN_VERSION:-12}"
-
-# URL do teu repo — os install scripts clonam isso dentro do LXC
 REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 
-# Arquivo onde ficam os scripts de install (relativo a este script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_DIR="${SCRIPT_DIR}/install"
 
-# CTID : hostname : IP : cpu : ram_mb : disk_gb : stack_folder
+# CTID:hostname:IP:cpu:ram_mb:disk_gb
 declare -A CT=(
-  [infra]="100:infra:192.168.0.20:2:2048:16:lxc-infra"
-  [media]="101:media:192.168.0.21:4:8192:120:lxc-media"
-  [dns]="102:dns:192.168.0.22:1:1024:8:lxc-dns"
-  [cloud]="103:cloud:192.168.0.23:4:4096:64:lxc-cloud"
-  [knowledge]="104:knowledge:192.168.0.24:2:2048:16:lxc-knowledge"
-  [games]="105:games:192.168.0.25:4:8192:64:lxc-games"
-  [utilities]="107:utilities:192.168.0.27:2:4096:32:lxc-utilities"
+  [infra]="100:infra:192.168.0.20:2:2048:16"
+  [media]="101:media:192.168.0.21:4:8192:120"
+  [dns]="102:dns:192.168.0.22:1:1024:8"
+  [cloud]="103:cloud:192.168.0.23:4:4096:64"
+  [knowledge]="104:knowledge:192.168.0.24:2:2048:16"
+  [games]="105:games:192.168.0.25:4:8192:64"
+  [utilities]="107:utilities:192.168.0.27:2:4096:32"
 )
 
 ALL_STACKS=(infra media dns cloud knowledge games utilities)
 
-AUTO_YES="${AUTO_YES:-0}"
+AUTO_YES=0
+SKIP_TAILSCALE=0
 for arg in "$@"; do
-  [[ "$arg" == "--yes" || "$arg" == "-y" ]] && AUTO_YES=1
+  case "$arg" in
+    --yes|-y)           AUTO_YES=1 ;;
+    --skip-tailscale)   SKIP_TAILSCALE=1 ;;
+  esac
 done
 
 # =============================================================================
@@ -70,16 +71,50 @@ confirm() {
 }
 
 require_root() {
-  [[ "${EUID}" -eq 0 ]] || die "Run as root on the Proxmox host."
+  [[ "${EUID}" -eq 0 ]] || die "Run as root no Proxmox host."
 }
 
 check_proxmox() {
-  command -v pct   >/dev/null 2>&1 || die "pct not found. Run on Proxmox host."
-  command -v pveam >/dev/null 2>&1 || die "pveam not found. Run on Proxmox host."
+  command -v pct   >/dev/null 2>&1 || die "pct not found."
+  command -v pveam >/dev/null 2>&1 || die "pveam not found."
 }
 
 # =============================================================================
-# Template
+# Tailscale no PVE host
+# =============================================================================
+
+install_tailscale_on_pve() {
+  echo
+  echo -e "${BL}══════════════════════════════════════${CL}"
+  echo -e "${BL} Tailscale no Proxmox host            ${CL}"
+  echo -e "${BL}══════════════════════════════════════${CL}"
+
+  if command -v tailscale >/dev/null 2>&1; then
+    info "Tailscale já instalado ($(tailscale version | head -1))."
+    local ts_ip
+    ts_ip="$(tailscale ip -4 2>/dev/null || echo '')"
+    if [[ -n "$ts_ip" ]]; then
+      msg "Tailscale IP: ${ts_ip}"
+    else
+      warn "Tailscale instalado mas não autenticado. Execute:"
+      echo "    tailscale up --advertise-routes=192.168.0.0/24 --accept-dns=false"
+    fi
+    return
+  fi
+
+  info "Instalando Tailscale..."
+  curl -fsSL https://tailscale.com/install.sh | sh >/dev/null 2>&1
+  msg "Tailscale instalado."
+  echo
+  echo -e "${YW}  ► Autentique agora:${CL}"
+  echo -e "    ${GN}tailscale up --advertise-routes=192.168.0.0/24 --accept-dns=false${CL}"
+  echo
+  echo -e "${YW}  Depois habilite subnet routes no painel Tailscale:${CL}"
+  echo -e "    https://login.tailscale.com/admin/machines"
+}
+
+# =============================================================================
+# Template LXC
 # =============================================================================
 
 find_or_download_template() {
@@ -104,7 +139,7 @@ find_or_download_template() {
 }
 
 # =============================================================================
-# Criação do LXC
+# LXC
 # =============================================================================
 
 create_lxc() {
@@ -116,21 +151,19 @@ create_lxc() {
   fi
 
   info "Criando CT ${ctid} (${hostname}) @ ${ip}..."
-
   pct create "$ctid" "$template" \
-    --hostname "$hostname" \
-    --cores "$cpu" \
-    --memory "$ram" \
-    --swap 512 \
-    --rootfs "${CONTAINER_STORAGE}:${disk}" \
-    --net0 "name=eth0,bridge=${BRIDGE},ip=${ip}/${CIDR},gw=${GATEWAY}" \
+    --hostname   "$hostname" \
+    --cores      "$cpu" \
+    --memory     "$ram" \
+    --swap       512 \
+    --rootfs     "${CONTAINER_STORAGE}:${disk}" \
+    --net0       "name=eth0,bridge=${BRIDGE},ip=${ip}/${CIDR},gw=${GATEWAY}" \
     --nameserver "$DNS_SERVER" \
-    --ostype debian \
+    --ostype     debian \
     --unprivileged 0 \
-    --features "nesting=1,keyctl=1" \
-    --onboot 1 \
-    --tags "homelab;docker;${hostname}"
-
+    --features   "nesting=1,keyctl=1" \
+    --onboot     1 \
+    --tags       "homelab;docker;${hostname}"
   msg "CT ${ctid} criado."
 }
 
@@ -145,19 +178,16 @@ start_lxc() {
 
 fix_apt_ipv4() {
   local ctid="$1"
-  # Força IPv4 no apt — resolve o bug de IPv6 sem rota em home labs
-  pct exec "$ctid" -- bash -c \
-    'echo '"'"'Acquire::ForceIPv4 "true";'"'"' > /etc/apt/apt.conf.d/99force-ipv4'
+  pct exec "$ctid" -- bash -c 'echo "Acquire::ForceIPv4 \"true\";" > /etc/apt/apt.conf.d/99force-ipv4'
 }
 
 set_timezone() {
   local ctid="$1"
-  pct exec "$ctid" -- bash -c \
-    "ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime 2>/dev/null || true"
+  pct exec "$ctid" -- bash -c "ln -sf /usr/share/zoneinfo/${TIMEZONE} /etc/localtime 2>/dev/null || true"
 }
 
 # =============================================================================
-# Roda o install script dentro do LXC
+# Roda install script dentro do LXC
 # =============================================================================
 
 run_install_script() {
@@ -171,16 +201,13 @@ run_install_script() {
     return
   fi
 
-  info "Rodando install/${stack}-install.sh no CT ${ctid}..."
-
-  # Copia _lib.sh e o install script pro mesmo diretório no LXC
+  info "Rodando ${stack}-install.sh no CT ${ctid}..."
   pct exec "$ctid" -- mkdir -p /tmp/homelab-install
-  pct push "$ctid" "$lib_script"      /tmp/homelab-install/_lib.sh
-  pct push "$ctid" "$install_script"  /tmp/homelab-install/install.sh
-  pct exec "$ctid" -- bash /tmp/homelab-install/install.sh
+  pct push "$ctid" "$lib_script"     /tmp/homelab-install/_lib.sh
+  pct push "$ctid" "$install_script" /tmp/homelab-install/install.sh
+  REPO_URL="$REPO_URL" pct exec "$ctid" -- bash /tmp/homelab-install/install.sh
   pct exec "$ctid" -- rm -rf /tmp/homelab-install
-
-  msg "Install do stack '${stack}' concluído no CT ${ctid}."
+  msg "Stack '${stack}' instalado no CT ${ctid}."
 }
 
 # =============================================================================
@@ -190,12 +217,11 @@ run_install_script() {
 deploy_stack() {
   local name="$1"
   local spec="${CT[$name]}"
-
-  IFS=":" read -r ctid hostname ip cpu ram disk stack_folder <<< "$spec"
+  IFS=":" read -r ctid hostname ip cpu ram disk <<< "$spec"
 
   echo
   echo -e "${BL}══════════════════════════════════════${CL}"
-  echo -e "${BL} Stack: ${name} │ CT ${ctid} │ ${ip}${CL}"
+  echo -e "${BL} Stack: ${name} │ CT ${ctid} │ ${ip}  ${CL}"
   echo -e "${BL}══════════════════════════════════════${CL}"
 
   local template
@@ -209,37 +235,45 @@ deploy_stack() {
 }
 
 # =============================================================================
-# Main
+# Summary
 # =============================================================================
 
 print_summary() {
+  local ts_ip
+  ts_ip="$(tailscale ip -4 2>/dev/null || echo '<tailscale-ip>')"
+
   echo
-  msg "Deploy finalizado."
+  msg "Deploy finalizado!"
   echo
-  echo -e "${GN}URLs principais:${CL}"
-  echo "  NPM:        http://192.168.0.20:81"
-  echo "  Homepage:   http://192.168.0.20:3000"
-  echo "  Uptime:     http://192.168.0.20:3001"
-  echo "  AdGuard:    http://192.168.0.22:3000"
-  echo "  Jellyfin:   http://192.168.0.21:8096"
-  echo "  Overseerr:  http://192.168.0.21:5055"
-  echo "  Nextcloud:  http://192.168.0.23:8081"
-  echo "  BookStack:  http://192.168.0.24:6875"
-  echo "  Memos:      http://192.168.0.24:5230"
-  echo "  Linkding:   http://192.168.0.24:9090"
+  echo -e "${GN}Tailscale IP do PVE:${CL} ${ts_ip}"
   echo
-  echo -e "${YW}Credenciais geradas ficam em /root/*-credentials.txt dentro de cada LXC.${CL}"
-  echo -e "${YW}Para atualizar um stack: pct exec <CTID> -- update${CL}"
+  echo -e "${GN}Serviços (via Tailscale ou rede local):${CL}"
+  printf "  %-14s http://%s\n"        "Homepage"   "192.168.0.20"
+  printf "  %-14s http://%s\n"        "Uptime Kuma" "192.168.0.20:3001"
+  printf "  %-14s http://%s\n"        "AdGuard"    "192.168.0.22:3000"
+  printf "  %-14s http://%s\n"        "Jellyfin"   "192.168.0.21:8096"
+  printf "  %-14s http://%s\n"        "Overseerr"  "192.168.0.21:5055"
+  printf "  %-14s http://%s\n"        "Nextcloud"  "192.168.0.23:8081"
+  printf "  %-14s http://%s\n"        "BookStack"  "192.168.0.24:6875"
+  printf "  %-14s http://%s\n"        "Memos"      "192.168.0.24:5230"
+  printf "  %-14s http://%s\n"        "Linkding"   "192.168.0.24:9090"
+  echo
+  echo -e "${YW}Credenciais: pct exec <CTID> -- cat /root/*-credentials.txt${CL}"
+  echo -e "${YW}Atualizar:   pct exec <CTID> -- update${CL}"
+  echo -e "${YW}Reload Caddy: pct exec 100 -- docker exec caddy caddy reload --config /etc/caddy/Caddyfile${CL}"
 }
+
+# =============================================================================
+# Main
+# =============================================================================
 
 main() {
   require_root
   check_proxmox
 
-  # Filtra args que não são flags
   local raw_targets=()
   for arg in "$@"; do
-    [[ "$arg" == "--yes" || "$arg" == "-y" ]] && continue
+    case "$arg" in --yes|-y|--skip-tailscale) continue ;; esac
     raw_targets+=("$arg")
   done
 
@@ -250,38 +284,38 @@ main() {
     echo "Stacks disponíveis:"
     for s in "${ALL_STACKS[@]}"; do
       IFS=":" read -r ctid _ ip _ <<< "${CT[$s]}"
-      echo "  ${s}  (CT ${ctid} @ ${ip})"
+      printf "  %-12s CT %s @ %s\n" "$s" "$ctid" "$ip"
     done
     echo
-    read -r -p "Quais stacks deployar? (ex: infra media, ou 'all'): " input
+    read -r -p "Quais stacks? (ex: infra media, ou 'all'): " input
     IFS=' ' read -r -a raw_targets <<< "$input"
   fi
 
-  if [[ "${raw_targets[*]:-}" == "all" ]]; then
-    targets=("${ALL_STACKS[@]}")
-  else
-    for t in "${raw_targets[@]}"; do
-      if [[ -n "${CT[$t]:-}" ]]; then
-        targets+=("$t")
-      else
-        warn "Stack desconhecido: '${t}' — ignorando."
-      fi
-    done
-  fi
+  [[ "${raw_targets[*]:-}" == "all" ]] && raw_targets=("${ALL_STACKS[@]}")
 
-  [[ ${#targets[@]} -eq 0 ]] && die "Nenhum stack válido selecionado."
+  for t in "${raw_targets[@]}"; do
+    if [[ -n "${CT[$t]:-}" ]]; then
+      targets+=("$t")
+    else
+      warn "Stack desconhecido: '${t}' — ignorando."
+    fi
+  done
+
+  [[ ${#targets[@]} -eq 0 ]] && die "Nenhum stack válido."
 
   echo
   echo "Stacks a deployar:"
   for t in "${targets[@]}"; do
     IFS=":" read -r ctid _ ip _ <<< "${CT[$t]}"
-    echo "  ${t}  (CT ${ctid} @ ${ip})"
+    printf "  %-12s CT %s @ %s\n" "$t" "$ctid" "$ip"
   done
   echo
 
   confirm "Continuar?" || { echo "Cancelado."; exit 0; }
 
-  apt-get install -y git curl rsync openssl >/dev/null 2>&1 || true
+  apt-get install -y git curl openssl >/dev/null 2>&1 || true
+
+  [[ "$SKIP_TAILSCALE" == "0" ]] && install_tailscale_on_pve
 
   for stack in "${targets[@]}"; do
     deploy_stack "$stack"
