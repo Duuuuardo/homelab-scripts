@@ -1,48 +1,67 @@
 #!/usr/bin/env bash
-# Stack: Neko + utils
+# Stack: Neko (remote browser)
 source /tmp/homelab-install/_lib.sh
 
-REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
-STACK="lxc-utilities"
-
-echo -e "\n${BL}══ Utilities (Neko + utils) ══${CL}\n"
+echo -e "\n${BL}=== Utilities (Neko) ===${CL}\n"
 
 base_setup
 install_docker
-clone_repo "$REPO_URL"
 
-msg_info "Preparando stack Utilities"
-mkdir -p "/opt/stacks/${STACK}"
-cp -r "/opt/homelab-scripts/${STACK}/." "/opt/stacks/${STACK}/"
-cd "/opt/stacks/${STACK}"
-[[ ! -f .env && -f .env.example ]] && cp .env.example .env
+STACK_DIR="/opt/stacks/lxc-utilities"
+mkdir -p "$STACK_DIR"
 
 NEKO_PW="$(rnd_pw)"
 NEKO_ADMIN_PW="$(rnd_pw)"
 
-sed -i "s|^NEKO_PASSWORD=.*|NEKO_PASSWORD=${NEKO_PW}|" .env
-sed -i "s|^NEKO_ADMIN_PASSWORD=.*|NEKO_ADMIN_PASSWORD=${NEKO_ADMIN_PW}|" .env
-msg_ok "Senhas geradas"
+msg_info "Escrevendo docker-compose.yml"
+cat > "$STACK_DIR/docker-compose.yml" << COMPOSE
+services:
 
-msg_info "Baixando imagens Docker"
-docker compose pull >/dev/null 2>&1
-msg_ok "Imagens baixadas"
+  neko:
+    image: ghcr.io/m1k1o/neko/firefox:latest
+    container_name: neko
+    restart: unless-stopped
+    shm_size: 2gb
+    environment:
+      NEKO_SCREEN: 1920x1080@30
+      NEKO_PASSWORD: ${NEKO_PW}
+      NEKO_PASSWORD_ADMIN: ${NEKO_ADMIN_PW}
+      NEKO_EPR: 52000-52100
+      NEKO_ICELITE: 1
+    ports:
+      - "8080:8080"
+      - "52000-52100:52000-52100/udp"
+    cap_add:
+      - SYS_ADMIN
+COMPOSE
+msg_ok "docker-compose.yml criado"
 
-msg_info "Iniciando containers"
-docker compose up -d >/dev/null 2>&1
-msg_ok "Containers iniciados"
+msg_info "Baixando imagem"
+cd "$STACK_DIR"
+docker compose pull >/dev/null 2>&1 && msg_ok "Imagem baixada" || msg_warn "Pull teve avisos"
 
-make_update_helper "/opt/stacks/${STACK}"
+msg_info "Iniciando container"
+docker compose up -d >/dev/null 2>&1 && msg_ok "Container iniciado" || msg_warn "Verifique: docker compose logs"
 
 cat > /root/utilities-credentials.txt << EOF
 Utilities Stack Credentials
 Gerado: $(date -Is)
 
+Neko URL:            http://192.168.0.27:8080
 Neko user password:  ${NEKO_PW}
 Neko admin password: ${NEKO_ADMIN_PW}
 EOF
 chmod 600 /root/utilities-credentials.txt
 
+cat > /usr/bin/update << 'UPDATER'
+#!/usr/bin/env bash
+cd /opt/stacks/lxc-utilities
+docker compose pull
+docker compose up -d
+UPDATER
+chmod +x /usr/bin/update
+
+IP="$(hostname -I | awk '{print $1}')"
 echo -e "\n${CM} ${GN}Utilities instalado!${CL}"
-echo "  Neko: http://$(hostname -I | awk '{print $1}'):8080"
-echo "  Credenciais salvas em: /root/utilities-credentials.txt"
+echo "  Neko: http://${IP}:8080"
+echo "  Credenciais: /root/utilities-credentials.txt"
