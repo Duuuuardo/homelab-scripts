@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Stack: Caddy + Homepage + Uptime Kuma
+# Stack: Nginx Proxy Manager + Homepage + Uptime Kuma
 source /tmp/homelab-install/_lib.sh
 
 REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
 
-echo -e "\n${BL}=== Infra (Caddy + Homepage + Uptime Kuma) ===${CL}\n"
+echo -e "\n${BL}=== Infra (Nginx Proxy Manager + Homepage + Uptime Kuma) ===${CL}\n"
 
 base_setup
 install_docker
@@ -21,49 +21,11 @@ stop_old_containers "nginx-proxy-manager" "npm" "app" "nginxproxymanager" \
                     "caddy" "homepage" "uptime-kuma"
 msg_ok "Containers antigos removidos"
 
-# ── Caddyfile ────────────────────────────────────────────────────────────────
-# Roteamento por hostname (dominios .lab resolvidos pelo AdGuard no CT dns)
-# HTTPS local com CA interna do Caddy para a rede .lab
-msg_info "Gerando Caddyfile"
-mkdir -p /opt/stacks/lxc-infra/caddy
-
-cat > /opt/stacks/lxc-infra/caddy/Caddyfile << 'CADDYFILE'
-{
-    admin off
-    local_certs
-}
-
-# Homepage -- acessivel por IP direto ou pelo dominio
-192.168.0.20, home.lab {
-    reverse_proxy homepage:3000
-}
-
-# Infra
-status.lab    { reverse_proxy uptime-kuma:3001 }
-dns.lab       { reverse_proxy 192.168.0.22:3000 }
-
-# Media
-jellyfin.lab  { reverse_proxy 192.168.0.21:8096 }
-requests.lab  { reverse_proxy 192.168.0.21:5055 }
-sonarr.lab    { reverse_proxy 192.168.0.21:8989 }
-radarr.lab    { reverse_proxy 192.168.0.21:7878 }
-prowlarr.lab  { reverse_proxy 192.168.0.21:9696 }
-qbitt.lab     { reverse_proxy 192.168.0.21:8080 }
-
-# Cloud
-cloud.lab     { reverse_proxy 192.168.0.23:8081 }
-
-# Knowledge
-bookstack.lab { reverse_proxy 192.168.0.24:6875 }
-memos.lab     { reverse_proxy 192.168.0.24:5230 }
-links.lab     { reverse_proxy 192.168.0.24:9090 }
-
-# Utilities
-search.lab    { reverse_proxy 192.168.0.27:5000 }
-budget.lab    { reverse_proxy 192.168.0.27:5006 }
-neko.lab      { reverse_proxy 192.168.0.27:8080 }
-CADDYFILE
-msg_ok "Caddyfile gerado"
+# ── NPM data ────────────────────────────────────────────────────────────────
+msg_info "Preparando dados do Nginx Proxy Manager"
+mkdir -p /opt/stacks/lxc-infra/npm/data
+mkdir -p /opt/stacks/lxc-infra/npm/letsencrypt
+msg_ok "Pastas do Nginx Proxy Manager criadas"
 
 # ── Homepage config (do repo) ─────────────────────────────────────────────────
 msg_info "Configurando Homepage"
@@ -77,7 +39,7 @@ else
 fi
 
 # ── docker-compose.yml ───────────────────────────────────────────────────────
-# Caddy escuta 80/443 e emite certificados locais via CA interna.
+# NPM escuta 80/81/443.
 # Homepage e Uptime Kuma tem portas diretas como fallback caso o DNS .lab
 # ainda nao esteja configurado (acesso por IP:porta funciona sem DNS).
 msg_info "Escrevendo docker-compose.yml"
@@ -88,19 +50,19 @@ networks:
 
 services:
 
-  caddy:
-    image: caddy:latest
-    container_name: caddy
+  nginx-proxy-manager:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
     restart: unless-stopped
     networks:
       - homelab-net
     ports:
       - "80:80"
+      - "81:81"
       - "443:443"
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
+      - ./npm/data:/data
+      - ./npm/letsencrypt:/etc/letsencrypt
 
   homepage:
     image: ghcr.io/gethomepage/homepage:latest
@@ -128,8 +90,6 @@ services:
       - uptime_kuma_data:/app/data
 
 volumes:
-  caddy_data:
-  caddy_config:
   uptime_kuma_data:
 COMPOSE
 msg_ok "docker-compose.yml criado"
@@ -146,28 +106,28 @@ docker compose up -d >/dev/null 2>&1 && msg_ok "Containers iniciados" || msg_war
 cat > /usr/bin/update << 'UPDATER'
 #!/usr/bin/env bash
 set -euo pipefail
-# Atualiza imagens e recarrega Caddyfile
+# Atualiza imagens e reaplica stack
 cd /opt/stacks/lxc-infra
 git -C /opt/homelab-scripts pull --ff-only 2>/dev/null && \
   cp -r /opt/homelab-scripts/lxc-infra/data/homepage/. ./homepage/config/ && \
   echo "Config da homepage atualizada do repo" || true
 docker compose pull
 docker compose up -d
-docker exec caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
 echo "Done."
 UPDATER
 chmod +x /usr/bin/update
 
 IP="$(hostname -I | awk '{print $1}')"
 echo -e "\n${CM} ${GN}Infra instalado!${CL}"
-echo "  Homepage:    https://${IP}  ou  https://home.lab"
-echo "  Uptime Kuma: http://${IP}:3001  ou  https://status.lab"
+echo "  NPM:         http://${IP}:81"
+echo "  Homepage:    http://${IP}:3000"
+echo "  Uptime Kuma: http://${IP}:3001"
 echo ""
 echo "  Os dominios .lab so funcionam apos configurar o DNS:"
 echo "  → Deploy o CT dns (AdGuard) e aponte seu DNS para 192.168.0.22"
 echo "  → No Tailscale: Settings > DNS > Add nameserver > 192.168.0.22 (split DNS: lab)"
-echo "  → Para evitar aviso de certificado, confie a CA local do Caddy nos seus dispositivos"
+echo "  → Configure os hosts no NPM conforme docs/nginx-proxy-manager.md"
 echo ""
-echo "  Editar Caddyfile:  /opt/stacks/lxc-infra/caddy/Caddyfile"
+echo "  NPM login:         admin@example.com / changeme"
 echo "  Editar homepage:   /opt/stacks/lxc-infra/homepage/config/"
-echo "  Reload Caddy:      docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
+echo "  Compose file:      /opt/stacks/lxc-infra/docker-compose.yml"
