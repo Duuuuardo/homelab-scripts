@@ -1,0 +1,26 @@
+- Dev:
+    - GitHub:
+        - abbr: GH
+          href: https://github.com
+    - Stack Overflow:
+        - abbr: SO
+          href: https://stackoverflow.com
+
+- Homelab:
+    - Proxmox:
+        - abbr: PVE
+          href: https://192.168.0.10:8006
+    - Router:
+        - abbr: NET
+          href: http://192.168.0.1
+    - NPM Admin:
+        - abbr: NPM
+          href: http://192.168.0.20:81
+
+- Personal:
+    - Proton Mail:
+        - abbr: PM
+          href: https://mail.proton.me
+    - Proton Pass:
+        - abbr: PP
+          href: https://pass.proton.me

@@ -16,16 +16,25 @@ services:
     devices:
       - /dev/dri:/dev/dri
 
-  jellyseerr:
-    image: fallenbagel/jellyseerr:latest
-    container_name: jellyseerr
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true
     restart: unless-stopped
     environment:
+      - LOG_LEVEL=debug
       - TZ=${TZ}
+      - PORT=5055
     ports:
       - "5055:5055"
     volumes:
-      - ./data/jellyseerr:/app/config
+      - ./data/seerr:/app/config
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/settings/public || exit 1
+      start_period: 20s
+      timeout: 3s
+      interval: 15s
+      retries: 3
 
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
@@ -35,11 +44,12 @@ services:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
-      - WEBUI_PORT=8080
+      - WEBUI_PORT=${QBITTORRENT_WEBUI_PORT}
+      - TORRENTING_PORT=${QBITTORRENT_TORRENT_PORT}
     ports:
-      - "8080:8080"
-      - "6881:6881"
-      - "6881:6881/udp"
+      - "${QBITTORRENT_WEBUI_PORT}:8080"
+      - "${QBITTORRENT_TORRENT_PORT}:6881"
+      - "${QBITTORRENT_TORRENT_PORT}:6881/udp"
     volumes:
       - ./data/qbittorrent:/config
       - /data:/data
@@ -66,18 +76,32 @@ services:
     ports:
       - "8191:8191"
 
-  lidarr:
-    image: lscr.io/linuxserver/lidarr:latest
-    container_name: lidarr
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
     restart: unless-stopped
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
       - TZ=${TZ}
     ports:
-      - "8686:8686"
+      - "8989:8989"
     volumes:
-      - ./data/lidarr:/config
+      - ./data/sonarr:/config
+      - /data:/data
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    ports:
+      - "7878:7878"
+    volumes:
+      - ./data/radarr:/config
       - /data:/data
 
   bazarr:
@@ -92,4 +116,18 @@ services:
       - "6767:6767"
     volumes:
       - ./data/bazarr:/config
+      - /data:/data
+
+  unpackerr:
+    image: golift/unpackerr:latest
+    container_name: unpackerr
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    environment:
+      - TZ=${TZ}
+      - UN_SONARR_0_URL=http://sonarr:8989
+      - UN_SONARR_0_API_KEY=
+      - UN_RADARR_0_URL=http://radarr:7878
+      - UN_RADARR_0_API_KEY=
+    volumes:
       - /data:/data

@@ -17,6 +17,7 @@ services:
     restart: unless-stopped
     environment:
       - TZ=${TZ}
+      - HOMEPAGE_ALLOWED_HOSTS=home.lab,192.168.0.20,localhost:3000
     ports:
       - "3000:3000"
     volumes:

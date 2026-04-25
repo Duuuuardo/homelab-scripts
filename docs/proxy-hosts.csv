@@ -1,0 +1,15 @@
+domain,scheme,forward_host,forward_port,websockets,block_common_exploits
+home.lab,http,192.168.0.20,3000,true,true
+status.lab,http,192.168.0.20,3001,true,true
+jellyfin.lab,http,192.168.0.21,8096,true,true
+requests.lab,http,192.168.0.21,5055,true,true
+sonarr.lab,http,192.168.0.21,8989,true,true
+radarr.lab,http,192.168.0.21,7878,true,true
+prowlarr.lab,http,192.168.0.21,9696,true,true
+qbitt.lab,http,192.168.0.21,8080,true,true
+bazarr.lab,http,192.168.0.21,6767,true,true
+cloud.lab,http,192.168.0.23,8081,true,true
+bookstack.lab,http,192.168.0.24,6875,true,true
+memos.lab,http,192.168.0.24,5230,true,true
+links.lab,http,192.168.0.24,9090,true,true
+games.lab,http,192.168.0.25,8084,true,true

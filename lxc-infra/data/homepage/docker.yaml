@@ -1,0 +1,5 @@
+# Docker integration.
+# O socket já está montado no compose.
+# Use com cuidado em ambientes expostos.
+local:
+  socket: /var/run/docker.sock

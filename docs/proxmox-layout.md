@@ -33,8 +33,7 @@ Montagens esperadas:
 ├── downloads
 ├── torrents
 ├── movies
-├── tv
-└── music
+└── tv
 ```
 
 No futuro, quando entrar um NAS, manter os caminhos internos iguais.

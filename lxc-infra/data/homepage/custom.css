@@ -1,0 +1,7 @@
+:root {
+  --border-radius: 16px;
+}
+
+.service-card {
+  border-radius: 16px;
+}

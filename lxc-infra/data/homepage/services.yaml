@@ -1,0 +1,84 @@
+- Infra:
+    - Proxmox:
+        href: https://192.168.0.10:8006
+        icon: proxmox
+        description: Host principal
+
+    - Nginx Proxy Manager:
+        href: http://192.168.0.20:81
+        icon: nginx-proxy-manager
+        description: Reverse proxy
+
+    - Uptime Kuma:
+        href: http://status.lab
+        icon: uptime-kuma
+        description: Monitoramento
+
+    - AdGuard Home:
+        href: http://192.168.0.22
+        icon: adguard-home
+        description: DNS e bloqueios
+
+- Media:
+    - Jellyfin:
+        href: http://jellyfin.lab
+        icon: jellyfin
+        description: Filmes, séries e biblioteca local
+
+    - Seerr:
+        href: http://requests.lab
+        icon: overseerr
+        description: Pedidos de filmes e séries
+
+    - Sonarr:
+        href: http://sonarr.lab
+        icon: sonarr
+        description: Séries
+
+    - Radarr:
+        href: http://radarr.lab
+        icon: radarr
+        description: Filmes
+
+    - Prowlarr:
+        href: http://prowlarr.lab
+        icon: prowlarr
+        description: Indexadores
+
+    - qBittorrent:
+        href: http://qbitt.lab
+        icon: qbittorrent
+        description: Downloads
+
+    - Bazarr:
+        href: http://bazarr.lab
+        icon: bazarr
+        description: Legendas
+
+- Cloud:
+    - Nextcloud:
+        href: http://cloud.lab
+        icon: nextcloud
+        description: Arquivos, PDFs e sync
+
+- Knowledge:
+    - BookStack:
+        href: http://bookstack.lab
+        icon: bookstack
+        description: Conhecimento organizado
+
+    - Memos:
+        href: http://memos.lab
+        icon: memos
+        description: Notas rápidas
+
+    - Linkding:
+        href: http://links.lab
+        icon: linkding
+        description: Bookmarks
+
+- Games:
+    - Pelican:
+        href: http://games.lab
+        icon: gameyfin
+        description: Painel de jogos

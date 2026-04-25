@@ -1,6 +1,6 @@
 # Homelab
 
-Repo com os stacks separados por LXC no Proxmox.
+Stacks separados por LXC no Proxmox.
 
 Rede atual:
 
@@ -15,52 +15,66 @@ Sem VLAN.
 | LXC | Função | IP |
 |---|---|---|
 | infra | proxy, dashboard e monitoramento | 192.168.0.20 |
-| media | Jellyfin e automação de mídia/música | 192.168.0.21 |
+| media | Jellyfin, Seerr e automação de filmes/séries | 192.168.0.21 |
 | dns | AdGuard Home e Unbound | 192.168.0.22 |
 | cloud | Nextcloud | 192.168.0.23 |
 | knowledge | notas, wiki e links | 192.168.0.24 |
 | games | painel de jogos | 192.168.0.25 |
 
-## Ideia do setup
+## Serviços principais
 
-- Nextcloud guarda arquivos, PDFs, documentos e sync.
-- Memos recebe notas rápidas e ideias soltas.
-- BookStack guarda conhecimento organizado.
-- Linkding guarda links úteis.
-- Pelican fica isolado para game servers.
-- Nginx Proxy Manager centraliza os domínios locais.
-- AdGuard resolve os domínios `.lab`.
+- Nextcloud: arquivos, PDFs e sync.
+- Memos: notas rápidas.
+- BookStack: conhecimento organizado.
+- Linkding: links úteis.
+- Jellyfin: player de mídia.
+- Seerr: pedidos de filmes e séries.
+- Sonarr/Radarr: automação de séries e filmes.
+- Prowlarr/qBittorrent/Bazarr: indexadores, downloads e legendas.
+- Pelican: painel de jogos.
+- Homepage: entrada central do homelab.
+- Nginx Proxy Manager: reverse proxy.
+- AdGuard Home: DNS local e bloqueios.
 
 ## Deploy
 
-Dentro de cada LXC:
-
-```bash
-cp .env.example .env
-docker compose up -d
-```
-
-## Domínios locais
-
-Todos os domínios apontam para o LXC infra:
+Ordem recomendada:
 
 ```txt
-home.lab       -> 192.168.0.20
-status.lab     -> 192.168.0.20
-jellyfin.lab   -> 192.168.0.20
-music.lab      -> 192.168.0.20
-requests.lab   -> 192.168.0.20
-cloud.lab      -> 192.168.0.20
-memos.lab      -> 192.168.0.20
-bookstack.lab  -> 192.168.0.20
-links.lab      -> 192.168.0.20
-games.lab      -> 192.168.0.20
+docs/deploy-order.md
 ```
 
-O encaminhamento para cada serviço é feito no Nginx Proxy Manager.
+## Configuração
+
+- `docs/community-scripts-docker-lxc.md`
+- `docs/lxc-specs.md`
+- `docs/mountpoints.md`
+- `docs/gpu-passthrough-media.md`
+- `docs/adguard.md`
+- `docs/nginx-proxy-manager.md`
+- `docs/tailscale-proxmox.md`
+- `docs/media-setup.md`
+- `docs/nextcloud.md`
+- `docs/knowledge-workflow.md`
+- `docs/proxmox-layout.md`
+
+## Homepage
+
+A configuração do Homepage já fica em:
+
+```txt
+lxc-infra/data/homepage
+```
+
+Após subir o LXC infra:
+
+```txt
+http://192.168.0.20:3000
+http://home.lab
+```
 
 ## Tailscale
 
 Tailscale roda no host Proxmox.
 
-Assim o acesso externo fica privado, sem abrir os serviços direto na internet.
+Não abrir portas no roteador para os serviços.
