@@ -22,6 +22,8 @@ stop_old_containers "nginx-proxy-manager" "npm" "app" "nginxproxymanager" \
 msg_ok "Containers antigos removidos"
 
 # ── Caddyfile ────────────────────────────────────────────────────────────────
+# Roteamento por hostname (dominios .lab resolvidos pelo AdGuard no CT dns)
+# Todos os servicos ficam em http://<nome>.lab na porta 80
 msg_info "Gerando Caddyfile"
 mkdir -p /opt/stacks/lxc-infra/caddy
 
@@ -31,214 +33,53 @@ cat > /opt/stacks/lxc-infra/caddy/Caddyfile << 'CADDYFILE'
     admin off
 }
 
-# Homepage na raiz porta 80
-# Caddy e Homepage estao na mesma rede Docker (homelab-net)
-# entao resolve pelo nome do container
-:80 {
+# Homepage -- acessivel por IP direto ou pelo dominio
+192.168.0.20, home.lab {
     reverse_proxy homepage:3000
 }
 
-# Uptime Kuma -- mesmo container, mesma rede
-:3001 {
-    reverse_proxy uptime-kuma:3001
-}
+# Infra
+status.lab    { reverse_proxy uptime-kuma:3001 }
+dns.lab       { reverse_proxy 192.168.0.22:3000 }
 
-# Servicos nos outros LXCs -- acesso por IP direto
-:8096 { reverse_proxy 192.168.0.21:8096 }
-:5055 { reverse_proxy 192.168.0.21:5055 }
-:8989 { reverse_proxy 192.168.0.21:8989 }
-:7878 { reverse_proxy 192.168.0.21:7878 }
-:9696 { reverse_proxy 192.168.0.21:9696 }
-:8080 { reverse_proxy 192.168.0.21:8080 }
-:8081 { reverse_proxy 192.168.0.23:8081 }
-:6875 { reverse_proxy 192.168.0.24:6875 }
-:5230 { reverse_proxy 192.168.0.24:5230 }
-:9090 { reverse_proxy 192.168.0.24:9090 }
-:3000 { reverse_proxy 192.168.0.22:3000 }
+# Media
+jellyfin.lab  { reverse_proxy 192.168.0.21:8096 }
+requests.lab  { reverse_proxy 192.168.0.21:5055 }
+sonarr.lab    { reverse_proxy 192.168.0.21:8989 }
+radarr.lab    { reverse_proxy 192.168.0.21:7878 }
+prowlarr.lab  { reverse_proxy 192.168.0.21:9696 }
+qbitt.lab     { reverse_proxy 192.168.0.21:8080 }
+
+# Cloud
+cloud.lab     { reverse_proxy 192.168.0.23:8081 }
+
+# Knowledge
+bookstack.lab { reverse_proxy 192.168.0.24:6875 }
+memos.lab     { reverse_proxy 192.168.0.24:5230 }
+links.lab     { reverse_proxy 192.168.0.24:9090 }
+
+# Utilities
+search.lab    { reverse_proxy 192.168.0.27:5000 }
+budget.lab    { reverse_proxy 192.168.0.27:5006 }
+neko.lab      { reverse_proxy 192.168.0.27:8080 }
 CADDYFILE
 msg_ok "Caddyfile gerado"
 
-# ── Homepage config ──────────────────────────────────────────────────────────
-msg_info "Gerando config da Homepage"
+# ── Homepage config (do repo) ─────────────────────────────────────────────────
+msg_info "Configurando Homepage"
 mkdir -p /opt/stacks/lxc-infra/homepage/config
-
-cat > /opt/stacks/lxc-infra/homepage/config/settings.yaml << 'SETTINGS'
-title: Homelab
-favicon: https://cdn.jsdelivr.net/gh/selfhst/icons/svg/proxmox.svg
-theme: dark
-color: stone
-headerStyle: clean
-statusStyle: dot
-language: pt
-useEqualHeights: true
-layout:
-  Media:
-    style: row
-    columns: 3
-  Infra:
-    style: row
-    columns: 4
-  Cloud & Knowledge:
-    style: row
-    columns: 4
-  DNS & Network:
-    style: row
-    columns: 2
-SETTINGS
-
-cat > /opt/stacks/lxc-infra/homepage/config/bookmarks.yaml << 'BOOKMARKS'
-- Quick:
-  - Proxmox:
-    - abbr: PVE
-      icon: proxmox.svg
-      href: https://192.168.0.1:8006
-  - GitHub:
-    - abbr: GH
-      icon: github.svg
-      href: https://github.com/Duuuuardo
-  - Tailscale:
-    - abbr: TS
-      icon: tailscale.svg
-      href: https://login.tailscale.com/admin/machines
-BOOKMARKS
-
-cat > /opt/stacks/lxc-infra/homepage/config/services.yaml << 'SERVICES'
-- Media:
-  - Jellyfin:
-      icon: jellyfin.svg
-      href: http://192.168.0.21:8096
-      description: Servidor de midia
-      widget:
-        type: jellyfin
-        url: http://192.168.0.21:8096
-        key: ""
-        enableBlocks: true
-        enableNowPlaying: true
-  - Overseerr:
-      icon: overseerr.svg
-      href: http://192.168.0.21:5055
-      description: Requests
-      widget:
-        type: overseerr
-        url: http://192.168.0.21:5055
-        key: ""
-  - Sonarr:
-      icon: sonarr.svg
-      href: http://192.168.0.21:8989
-      description: Series
-      widget:
-        type: sonarr
-        url: http://192.168.0.21:8989
-        key: ""
-  - Radarr:
-      icon: radarr.svg
-      href: http://192.168.0.21:7878
-      description: Filmes
-      widget:
-        type: radarr
-        url: http://192.168.0.21:7878
-        key: ""
-  - Prowlarr:
-      icon: prowlarr.svg
-      href: http://192.168.0.21:9696
-      description: Indexers
-  - qBittorrent:
-      icon: qbittorrent.svg
-      href: http://192.168.0.21:8080
-      description: Torrents
-      widget:
-        type: qbittorrent
-        url: http://192.168.0.21:8080
-        username: admin
-        password: adminadmin
-
-- Infra:
-  - Uptime Kuma:
-      icon: uptime-kuma.svg
-      href: http://192.168.0.20:3001
-      description: Monitoramento
-      widget:
-        type: uptimekuma
-        url: http://uptime-kuma:3001
-        slug: homelab
-  - Proxmox:
-      icon: proxmox.svg
-      href: https://192.168.0.1:8006
-      description: Hypervisor
-      widget:
-        type: proxmox
-        url: https://192.168.0.1:8006
-        username: root@pam
-        password: ""
-        node: pve
-
-- Cloud & Knowledge:
-  - Nextcloud:
-      icon: nextcloud.svg
-      href: http://192.168.0.23:8081
-      description: Cloud pessoal
-  - BookStack:
-      icon: bookstack.svg
-      href: http://192.168.0.24:6875
-      description: Wiki
-  - Memos:
-      icon: memos.svg
-      href: http://192.168.0.24:5230
-      description: Notas
-  - Linkding:
-      icon: linkding.svg
-      href: http://192.168.0.24:9090
-      description: Bookmarks
-
-- DNS & Network:
-  - AdGuard Home:
-      icon: adguard-home.svg
-      href: http://192.168.0.22:3000
-      description: DNS + bloqueio de ads
-      widget:
-        type: adguard
-        url: http://192.168.0.22:3000
-        username: admin
-        password: ""
-  - Tailscale:
-      icon: tailscale.svg
-      href: https://login.tailscale.com/admin/machines
-      description: VPN
-SERVICES
-
-cat > /opt/stacks/lxc-infra/homepage/config/widgets.yaml << 'WIDGETS'
-- resources:
-    label: infra (CT 100)
-    cpu: true
-    memory: true
-    disk: /
-    uptime: true
-    units: metric
-    refresh: 5000
-
-- datetime:
-    text_size: xl
-    format:
-      timeStyle: short
-      dateStyle: short
-      hour12: false
-
-- search:
-    provider: duckduckgo
-    target: _blank
-    focus: false
-WIDGETS
-
-cat > /opt/stacks/lxc-infra/homepage/config/docker.yaml << 'DOCKERYAML'
-my-docker:
-  socket: /var/run/docker.sock
-DOCKERYAML
-msg_ok "Config da Homepage gerada"
+if [[ -d /opt/homelab-scripts/lxc-infra/data/homepage ]]; then
+  cp -r /opt/homelab-scripts/lxc-infra/data/homepage/. \
+        /opt/stacks/lxc-infra/homepage/config/
+  msg_ok "Config da Homepage copiada do repo"
+else
+  msg_warn "Pasta data/homepage nao encontrada no repo — homepage sem config pre-definida"
+fi
 
 # ── docker-compose.yml ───────────────────────────────────────────────────────
-# CORRECAO: Caddy e Homepage na mesma rede Docker (homelab-net)
-# Sem network_mode: host no Caddy -- assim ele resolve "homepage:3000"
-# O Caddy expoe as portas diretamente no host via ports:
+# Caddy escuta porta 80 (e 443 para futuro HTTPS).
+# Homepage e Uptime Kuma tem portas diretas como fallback caso o DNS .lab
+# ainda nao esteja configurado (acesso por IP:porta funciona sem DNS).
 msg_info "Escrevendo docker-compose.yml"
 cat > /opt/stacks/lxc-infra/docker-compose.yml << 'COMPOSE'
 networks:
@@ -256,18 +97,6 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "3001:3001"
-      - "5055:5055"
-      - "6875:6875"
-      - "7878:7878"
-      - "8080:8080"
-      - "8081:8081"
-      - "8096:8096"
-      - "8989:8989"
-      - "9090:9090"
-      - "9696:9696"
-      - "5230:5230"
-      - "3000:3000"
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -279,8 +108,8 @@ services:
     restart: unless-stopped
     networks:
       - homelab-net
-    expose:
-      - "3000"
+    ports:
+      - "3000:3000"
     volumes:
       - ./homepage/config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -293,8 +122,8 @@ services:
     restart: unless-stopped
     networks:
       - homelab-net
-    expose:
-      - "3001"
+    ports:
+      - "3001:3001"
     volumes:
       - uptime_kuma_data:/app/data
 
@@ -316,7 +145,12 @@ docker compose up -d >/dev/null 2>&1 && msg_ok "Containers iniciados" || msg_war
 # ── Update helper ────────────────────────────────────────────────────────────
 cat > /usr/bin/update << 'UPDATER'
 #!/usr/bin/env bash
+set -euo pipefail
+# Atualiza imagens e recarrega Caddyfile
 cd /opt/stacks/lxc-infra
+git -C /opt/homelab-scripts pull --ff-only 2>/dev/null && \
+  cp -r /opt/homelab-scripts/lxc-infra/data/homepage/. ./homepage/config/ && \
+  echo "Config da homepage atualizada do repo" || true
 docker compose pull
 docker compose up -d
 docker exec caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
@@ -326,9 +160,13 @@ chmod +x /usr/bin/update
 
 IP="$(hostname -I | awk '{print $1}')"
 echo -e "\n${CM} ${GN}Infra instalado!${CL}"
-echo "  Homepage:    http://${IP}"
-echo "  Uptime Kuma: http://${IP}:3001"
-echo "  AdGuard:     http://${IP}:3000  (proxy pro CT dns)"
+echo "  Homepage:    http://${IP}  ou  http://home.lab"
+echo "  Uptime Kuma: http://${IP}:3001  ou  http://status.lab"
 echo ""
-echo "  Editar servicos: /opt/stacks/lxc-infra/homepage/config/services.yaml"
-echo "  Reload Caddy:    docker exec caddy caddy reload --config /etc/caddy/Caddyfile"
+echo "  Os dominios .lab so funcionam apos configurar o DNS:"
+echo "  → Deploy o CT dns (AdGuard) e aponte seu DNS para 192.168.0.22"
+echo "  → No Tailscale: Settings > DNS > Add nameserver > 192.168.0.22 (split DNS: lab)"
+echo ""
+echo "  Editar Caddyfile:  /opt/stacks/lxc-infra/caddy/Caddyfile"
+echo "  Editar homepage:   /opt/stacks/lxc-infra/homepage/config/"
+echo "  Reload Caddy:      docker exec caddy caddy reload --config /etc/caddy/Caddyfile"

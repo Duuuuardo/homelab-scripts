@@ -424,7 +424,7 @@ print_summary() {
   echo -e "${BOLD}Tailscale IP do PVE:${CL} ${ts_ip}"
   echo
   echo -e "${BOLD}Servicos:${CL}"
-  printf "  %-14s http://%s\n" "Homepage"    "192.168.0.20"
+  printf "  %-14s http://%s\n" "Homepage"    "192.168.0.20  (ou :3000)"
   printf "  %-14s http://%s\n" "Uptime Kuma" "192.168.0.20:3001"
   printf "  %-14s http://%s\n" "AdGuard"     "192.168.0.22:3000"
   printf "  %-14s http://%s\n" "Jellyfin"    "192.168.0.21:8096"
