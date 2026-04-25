@@ -164,6 +164,7 @@ run_install_script() {
   local ctid="$1"
   local stack="$2"
   local install_script="${INSTALL_DIR}/${stack}-install.sh"
+  local lib_script="${INSTALL_DIR}/_lib.sh"
 
   if [[ ! -f "$install_script" ]]; then
     warn "install/${stack}-install.sh não encontrado — pulando."
@@ -172,10 +173,12 @@ run_install_script() {
 
   info "Rodando install/${stack}-install.sh no CT ${ctid}..."
 
-  # Copia o script pro LXC e executa
-  pct push "$ctid" "$install_script" /tmp/install.sh
-  pct exec "$ctid" -- bash /tmp/install.sh
-  pct exec "$ctid" -- rm -f /tmp/install.sh
+  # Copia _lib.sh e o install script pro mesmo diretório no LXC
+  pct exec "$ctid" -- mkdir -p /tmp/homelab-install
+  pct push "$ctid" "$lib_script"      /tmp/homelab-install/_lib.sh
+  pct push "$ctid" "$install_script"  /tmp/homelab-install/install.sh
+  pct exec "$ctid" -- bash /tmp/homelab-install/install.sh
+  pct exec "$ctid" -- rm -rf /tmp/homelab-install
 
   msg "Install do stack '${stack}' concluído no CT ${ctid}."
 }

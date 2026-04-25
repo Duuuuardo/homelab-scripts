@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stack: BookStack + Memos + Linkding
-source "$(dirname "$0")/_lib.sh"
+source /tmp/homelab-install/_lib.sh
 
 REPO_URL="${REPO_URL:-https://github.com/Duuuuardo/homelab-scripts.git}"
 STACK="lxc-knowledge"
