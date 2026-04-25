@@ -52,6 +52,11 @@ Para `.lab`, não ativar SSL.
 | memos.lab | 192.168.0.24 | 5230 |
 | links.lab | 192.168.0.24 | 9090 |
 | games.lab | 192.168.0.25 | 8084 |
+| dokploy.lab | 192.168.0.26 | 3000 |
+| search.lab | 192.168.0.27 | 5000 |
+| budget.lab | 192.168.0.27 | 5006 |
+| neko.lab | 192.168.0.27 | 8080 |
+| invoices.lab | 192.168.0.27 | definir depois |
 
 ## Advanced config recomendada para Jellyfin
 

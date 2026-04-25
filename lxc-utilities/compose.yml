@@ -1,0 +1,36 @@
+services:
+  whoogle:
+    image: benbusby/whoogle-search:latest
+    container_name: whoogle
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - WHOOGLE_CONFIG_COUNTRY=BR
+      - WHOOGLE_CONFIG_LANGUAGE=lang_pt-BR
+      - WHOOGLE_CONFIG_SEARCH_LANGUAGE=lang_pt-BR
+    security_opt:
+      - no-new-privileges
+
+  actual:
+    image: actualbudget/actual-server:latest
+    container_name: actual
+    restart: unless-stopped
+    ports:
+      - "5006:5006"
+    volumes:
+      - ./data/actual:/data
+
+  neko:
+    image: ghcr.io/m1k1o/neko/firefox:latest
+    container_name: neko
+    restart: unless-stopped
+    shm_size: "2gb"
+    ports:
+      - "8080:8080"
+      - "52000-52100:52000-52100/udp"
+    environment:
+      NEKO_DESKTOP_SCREEN: 1920x1080@30
+      NEKO_MEMBER_MULTIUSER_USER_PASSWORD: ${NEKO_PASSWORD}
+      NEKO_MEMBER_MULTIUSER_ADMIN_PASSWORD: ${NEKO_ADMIN_PASSWORD}
+      NEKO_WEBRTC_NAT1TO1: ${NEKO_NAT1TO1}

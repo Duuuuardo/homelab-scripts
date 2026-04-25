@@ -20,6 +20,8 @@ Sem VLAN.
 | cloud | Nextcloud | 192.168.0.23 |
 | knowledge | notas, wiki e links | 192.168.0.24 |
 | games | painel de jogos | 192.168.0.25 |
+| deploy | Dokploy e apps próprios | 192.168.0.26 |
+| utilities | apps úteis extras | 192.168.0.27 |
 
 ## Serviços principais
 
@@ -32,6 +34,10 @@ Sem VLAN.
 - Sonarr/Radarr: automação de séries e filmes.
 - Prowlarr/qBittorrent/Bazarr: indexadores, downloads e legendas.
 - Pelican: painel de jogos.
+- Dokploy: deploy de apps próprios, bots, APIs e workers.
+- Whoogle: busca privada.
+- Actual Budget: finanças pessoais.
+- Neko: browser virtual.
 - Homepage: entrada central do homelab.
 - Nginx Proxy Manager: reverse proxy.
 - AdGuard Home: DNS local e bloqueios.
@@ -49,7 +55,6 @@ docs/deploy-order.md
 - `docs/community-scripts-docker-lxc.md`
 - `docs/lxc-specs.md`
 - `docs/mountpoints.md`
-- `docs/gpu-passthrough-media.md`
 - `docs/adguard.md`
 - `docs/nginx-proxy-manager.md`
 - `docs/tailscale-proxmox.md`
@@ -57,6 +62,9 @@ docs/deploy-order.md
 - `docs/nextcloud.md`
 - `docs/knowledge-workflow.md`
 - `docs/proxmox-layout.md`
+- `docs/dokploy.md`
+- `docs/utilities.md`
+- `docs/invoiceshelf.md`
 
 ## Homepage
 

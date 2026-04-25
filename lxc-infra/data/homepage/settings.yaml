@@ -21,3 +21,9 @@ layout:
   Games:
     style: row
     columns: 2
+  Deploy:
+    style: row
+    columns: 2
+  Utilities:
+    style: row
+    columns: 3

@@ -13,3 +13,8 @@ bookstack.lab,http,192.168.0.24,6875,true,true
 memos.lab,http,192.168.0.24,5230,true,true
 links.lab,http,192.168.0.24,9090,true,true
 games.lab,http,192.168.0.25,8084,true,true
+dokploy.lab,http,192.168.0.26,3000,true,true
+search.lab,http,192.168.0.27,5000,true,true
+budget.lab,http,192.168.0.27,5006,true,true
+neko.lab,http,192.168.0.27,8080,true,true
+

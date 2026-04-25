@@ -82,3 +82,25 @@
         href: http://games.lab
         icon: gameyfin
         description: Painel de jogos
+
+- Deploy:
+    - Dokploy:
+        href: http://dokploy.lab
+        icon: docker
+        description: Deploy de apps próprios
+
+- Utilities:
+    - Whoogle:
+        href: http://search.lab
+        icon: google
+        description: Busca privada
+
+    - Actual Budget:
+        href: http://budget.lab
+        icon: actual-budget
+        description: Finanças pessoais
+
+    - Neko:
+        href: http://neko.lab
+        icon: firefox
+        description: Browser virtual

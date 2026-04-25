@@ -45,6 +45,11 @@ bookstack.lab  -> 192.168.0.20
 memos.lab      -> 192.168.0.20
 links.lab      -> 192.168.0.20
 games.lab      -> 192.168.0.20
+dokploy.lab    -> 192.168.0.20
+search.lab     -> 192.168.0.20
+budget.lab     -> 192.168.0.20
+neko.lab       -> 192.168.0.20
+invoices.lab   -> 192.168.0.20
 ```
 
 ## Roteador

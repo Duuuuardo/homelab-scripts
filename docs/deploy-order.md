@@ -30,15 +30,7 @@ Ver:
 docs/mountpoints.md
 ```
 
-## 3. Configurar GPU passthrough no media
-
-Apenas para o LXC media:
-
-```txt
-docs/gpu-passthrough-media.md
-```
-
-## 4. Subir infra
+## 3. Subir infra
 
 No LXC infra:
 
@@ -54,7 +46,7 @@ Acessar:
 http://192.168.0.20:81
 ```
 
-## 5. Subir DNS
+## 4. Subir DNS
 
 No LXC dns:
 
@@ -70,7 +62,7 @@ Configurar:
 docs/adguard.md
 ```
 
-## 6. Configurar NPM
+## 5. Configurar NPM
 
 Criar os hosts:
 
@@ -78,7 +70,7 @@ Criar os hosts:
 docs/nginx-proxy-manager.md
 ```
 
-## 7. Subir media
+## 6. Subir media
 
 No LXC media:
 
@@ -94,13 +86,23 @@ Configurar:
 docs/media-setup.md
 ```
 
-## 8. Subir cloud, knowledge e games
+Observação: o LXC media usa `/dev/dri` no compose para aceleração de hardware do Jellyfin. No fluxo deste repo, os ajustes de LXC/GPU ficam no setup do Docker LXC/Community Scripts quando aplicável.
+
+## 7. Subir cloud, knowledge, games e utilities
 
 Em cada LXC:
 
 ```bash
 cp .env.example .env
 docker compose up -d
+```
+
+## 8. Dokploy
+
+Ver:
+
+```txt
+docs/dokploy.md
 ```
 
 ## 9. Testar
@@ -111,4 +113,6 @@ http://jellyfin.lab
 http://requests.lab
 http://cloud.lab
 http://bookstack.lab
+http://search.lab
+http://budget.lab
 ```

@@ -135,6 +135,7 @@ lxc-dns        -> dns
 lxc-cloud      -> cloud
 lxc-knowledge  -> knowledge
 lxc-games      -> games
+lxc-utilities  -> utilities
 ```
 
 ## Teste rápido
@@ -145,3 +146,29 @@ Dentro de cada LXC:
 docker ps
 docker compose version
 ```
+
+
+## Dokploy
+
+Para Dokploy, usar o script addon específico no shell do Proxmox:
+
+```bash
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/tools/addon/dokploy.sh)"
+```
+
+Depois seguir:
+
+```txt
+docs/dokploy.md
+```
+
+
+## GPU / media
+
+O compose do media já monta:
+
+```txt
+/dev/dri
+```
+
+Para Jellyfin com aceleração, criar o Docker LXC media de forma compatível com passthrough pelo fluxo do Community Scripts/Proxmox.
